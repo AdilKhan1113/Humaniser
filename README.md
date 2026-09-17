@@ -177,6 +177,9 @@ It is not a detector. A high score means the writing reads naturally. It is not 
 ```
 humaniser.html       The generated single-file build. Do not edit: run npm run build
 server.js            HTTP server, routes, streaming. No framework.
+Dockerfile           Production image, non-root, health-checked
+render.yaml          Render blueprint
+fly.toml             Fly.io configuration
 lib/
   analyze.js         Scoring, metrics and every finding in the report
   rules.js           The offline rewriter and its pipeline
@@ -188,16 +191,79 @@ lib/
   docx.js            Unzips a .docx to plain text, with no dependency
   prompt.js          The house style, written for Claude
   claude.js          The API call, streaming and error handling
+  guard.js           Rate limiting and the access code, for a public deployment
   env.js             Reads .env without needing a newer Node
 public/              The whole front end: one HTML file, one CSS, one JS
 tools/
   build-standalone.js Inlines lib/ and public/ into humaniser.html
-test/                86 tests, run with npm test
+test/                95 tests, run with npm test
 ```
 
 `public/app.js` serves both builds. With a server it calls `/api`; in the single-file build it finds an injected bridge and calls the rules engine directly, so there is one front end rather than two copies drifting apart. A test fails if `humaniser.html` falls behind its sources.
 
 There is no build step. No bundler, no transpiler, no framework. `public/app.js` is the file the browser runs, which means you can change a line and just reload.
+
+## Putting it online
+
+The app is a plain Node server with one dependency, a health check at `/healthz`, and every secret read from the environment. That deploys anywhere. Two routes are set up ready to go.
+
+### Before you expose it: protect the key
+
+Your API key lives on the server, so **anyone who can reach the URL can spend your credit**. Set an access code and Claude mode asks for it:
+
+```bash
+HUMANISER_ACCESS_CODE=pick-something-long
+```
+
+The offline engine stays open to everyone, because it costs nothing and sends nothing anywhere. On startup the server prints a warning if a key is set without a code, and it will not let a wrong code eat into your hourly allowance.
+
+| Variable | What it does | Default |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | Turns Claude mode on | unset, offline only |
+| `HUMANISER_ACCESS_CODE` | Password for Claude mode | unset, meaning no password |
+| `HOST` | `0.0.0.0` to accept outside connections | `127.0.0.1` |
+| `PORT` | Port to listen on | `8787` |
+| `TRUST_PROXY` | `1` behind a load balancer, so rate limits see real clients | off |
+| `RATE_LIMIT_CLAUDE` | Claude rewrites per client per hour | `20` |
+| `RATE_LIMIT_OFFLINE` | Offline requests per client per hour | `240` |
+
+Leave `TRUST_PROXY` off unless a load balancer really is in front. The header it reads is trivial to forge, and trusting it without one hands every caller an unlimited supply of identities.
+
+### Render
+
+Push the repository, then in Render pick **New → Blueprint** and point it at your repo. `render.yaml` sets everything except the two secrets, which Render asks you for. Then:
+
+```bash
+# or paste them into the dashboard
+render env set ANTHROPIC_API_KEY=sk-ant-... --service humaniser
+render env set HUMANISER_ACCESS_CODE=pick-something-long --service humaniser
+```
+
+You get `https://humaniser-something.onrender.com`. The free tier sleeps when idle, so the first visit after a quiet spell takes a few seconds.
+
+### Fly.io
+
+```bash
+fly launch --no-deploy            # claims a name, keeps fly.toml
+fly secrets set ANTHROPIC_API_KEY=sk-ant-... HUMANISER_ACCESS_CODE=pick-something-long
+fly deploy
+fly open
+```
+
+Secrets set this way are stored by Fly and injected as environment variables. They are never written into the repo or the image.
+
+### Anywhere with Docker
+
+```bash
+docker build -t humaniser .
+docker run -p 8787:8787   -e ANTHROPIC_API_KEY=sk-ant-...   -e HUMANISER_ACCESS_CODE=pick-something-long   humaniser
+```
+
+The image sets `HOST=0.0.0.0` and `TRUST_PROXY=1`, runs as a non-root user, and carries a health check.
+
+### What is exposed
+
+Public: the page, the offline engine, `/healthz`, and `/api/status`, which reports only whether a key and a code exist. Behind the access code: Claude mode, the one route that costs money. Never sent to the browser under any circumstances: the API key and the access code, which a test asserts on every route.
 
 ## Development
 

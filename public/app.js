@@ -12,6 +12,8 @@ const ui = {
   strength: el('strength'),
   effort: el('effort'),
   effortField: el('effort-field'),
+  codeField: el('code-field'),
+  accessCode: el('access-code'),
   run: el('run'),
   input: el('input'),
   output: el('output'),
@@ -200,9 +202,19 @@ async function loadStatus() {
     const status = await fetch('/api/status').then((r) => r.json());
     state.status = status;
 
+    if (status.claude.accessCodeRequired) {
+      ui.codeField.hidden = ui.mode.value !== 'claude';
+      // Kept for this tab only, so a shared computer does not keep the code.
+      try {
+        const saved = sessionStorage.getItem('humaniser.accessCode');
+        if (saved) ui.accessCode.value = saved;
+      } catch { /* private mode can refuse storage */ }
+    }
+
     if (status.claude.keyInEnv) {
-      ui.engineNote.textContent = `Claude mode ready with ${status.claude.model}. `
-        + 'Offline rules need no key and never leave this machine.';
+      ui.engineNote.textContent = `Claude mode ready with ${status.claude.model}.`
+        + (status.claude.accessCodeRequired ? ' It needs the access code from whoever runs this server.' : '')
+        + ` Up to ${status.limits.claude} Claude rewrites an hour. The offline rules need no key at all.`;
     } else {
       // Nothing to gain from letting someone pick an engine that cannot run.
       const claudeOption = ui.mode.querySelector('option[value="claude"]');
@@ -565,9 +577,10 @@ async function runLocal(text) {
 }
 
 async function runClaude(text) {
+  const code = ui.accessCode.value.trim();
   const res = await fetch('/api/humanise/claude', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...(code ? { 'x-access-code': code } : {}) },
     body: JSON.stringify({
       text,
       strength: ui.strength.value,
@@ -577,8 +590,12 @@ async function runClaude(text) {
   });
   if (!res.ok || !res.body) {
     const data = await res.json().catch(() => ({}));
+    if (res.status === 401) ui.accessCode.focus();
     throw new Error(data.error || 'Claude mode could not start.');
   }
+  try {
+    if (code) sessionStorage.setItem('humaniser.accessCode', code);
+  } catch { /* storage may be unavailable */ }
 
   state.changes = [];
   ui.output.textContent = '';
@@ -663,6 +680,7 @@ ui.input.addEventListener('input', () => {
 ui.mode.addEventListener('change', () => {
   const claude = ui.mode.value === 'claude';
   ui.effortField.hidden = !claude;
+  ui.codeField.hidden = !claude || !(state.status && state.status.claude.accessCodeRequired);
   if (claude && state.status && !state.status.claude.keyInEnv) {
     setStatus('No API key in the environment. Add one to .env and restart, or stay on the offline engine.', true);
   } else {

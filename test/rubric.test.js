@@ -138,3 +138,46 @@ test('reads WordprocessingML down to plain text', () => {
   assert.doesNotMatch(text, /deleted text/);
   assert.match(text, /Third’s person/);
 });
+
+test('refuses a zip bomb instead of inflating it', async () => {
+  // A small archive whose one entry expands past the ceiling. Reading it all in
+  // before measuring is how a tiny upload takes a server down.
+  const { extractDocxText } = await import('../lib/docx.js');
+  const zlib = await import('node:zlib');
+
+  const payload = Buffer.from('<w:document><w:body>' + 'A'.repeat(45 * 1024 * 1024) + '</w:body></w:document>');
+  const deflated = zlib.deflateRawSync(payload, { level: 9 });
+  const name = Buffer.from('word/document.xml');
+
+  // Minimal zip: local header, data, central directory, end record.
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(8, 8);                       // deflate
+  local.writeUInt32LE(deflated.length, 18);
+  local.writeUInt32LE(payload.length, 22);
+  local.writeUInt16LE(name.length, 26);
+
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(8, 10);
+  central.writeUInt32LE(deflated.length, 20);
+  central.writeUInt32LE(payload.length, 24);
+  central.writeUInt16LE(name.length, 28);
+  central.writeUInt32LE(0, 42);                    // local header offset
+
+  const centralStart = local.length + name.length + deflated.length;
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(1, 8);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(central.length + name.length, 12);
+  end.writeUInt32LE(centralStart, 16);
+
+  const zip = Buffer.concat([local, name, deflated, central, name, end]);
+  assert.ok(zip.length < 1_000_000, `the archive itself is small: ${zip.length} bytes`);
+
+  await assert.rejects(
+    () => extractDocxText(zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength)),
+    /unpacks to far more/,
+  );
+});

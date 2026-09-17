@@ -16,6 +16,9 @@ import { humanise, PROFILES } from './lib/rules.js';
 import { parseRubric, checkAgainstRubric } from './lib/rubric.js';
 import { extractDocxText } from './lib/docx.js';
 import { rewriteWithClaude, hasApiKeyInEnv, MODEL, EFFORT_LEVELS } from './lib/claude.js';
+import {
+  ACCESS_CODE, clientKey, takeToken, sweepBuckets, accessCodeAccepted, limitsForStatus,
+} from './lib/guard.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(here, 'public');
@@ -49,11 +52,17 @@ function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
+    let aborted = false;
     req.on('data', (chunk) => {
+      if (aborted) return;
       size += chunk.length;
       if (size > MAX_BODY) {
+        aborted = true;
+        // Reject first so the route can answer with a 413, then stop reading.
+        // Destroying the socket immediately gave the client a connection reset
+        // instead of a reason.
         reject(Object.assign(new Error('That text is too long for one request.'), { status: 413 }));
-        req.destroy();
+        req.pause();
         return;
       }
       chunks.push(chunk);
@@ -172,7 +181,10 @@ const routes = {
         model: MODEL,
         keyInEnv: hasApiKeyInEnv(),
         efforts: EFFORT_LEVELS,
+        // Whether a code is needed, never the code itself.
+        accessCodeRequired: Boolean(ACCESS_CODE),
       },
+      limits: limitsForStatus(),
       profiles: Object.entries(PROFILES).map(([id, p]) => ({
         id,
         label: p.label,
@@ -231,15 +243,65 @@ const routes = {
 
   'POST /api/humanise/claude': async (req, res) => {
     const payload = await readJson(req);
+    const who = clientKey(req);
+
+    // The code is checked before anything reaches the API, so a wrong one costs
+    // nothing, and it is counted against its own allowance so that guessing
+    // cannot exhaust the owner's Claude budget.
+    if (!accessCodeAccepted(req.headers['x-access-code'] || payload.accessCode)) {
+      const attempts = takeToken(who, 'auth');
+      if (!attempts.ok) res.setHeader('retry-after', String(attempts.retryAfter));
+      throw Object.assign(
+        new Error('That access code is not right. Claude mode is limited to whoever runs this server.'),
+        { status: attempts.ok ? 401 : 429 },
+      );
+    }
+
+    const allowance = takeToken(who, 'claude');
+    if (!allowance.ok) {
+      res.setHeader('retry-after', String(allowance.retryAfter));
+      throw Object.assign(
+        new Error('Hourly limit for Claude mode reached. The offline engine has no limit worth hitting.'),
+        { status: 429 },
+      );
+    }
     await streamClaude(req, res, payload);
   },
 };
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || HOST}`);
-  const key = `${req.method} ${url.pathname}`;
-
   try {
+    // Parsed inside the try. A request for "//" or a junk Host header makes
+    // new URL throw, and out here that became an unhandled rejection, which
+    // ends the process — one malformed request would take the whole site down.
+    let url;
+    try {
+      url = new URL(req.url, `http://${req.headers.host || HOST}`);
+    } catch {
+      sendJson(res, 400, { error: 'That request line is not a valid URL.' });
+      return;
+    }
+    const key = `${req.method} ${url.pathname}`;
+
+    // Hosts poll this to decide whether the instance is alive.
+    if (key === 'GET /healthz') {
+      sendJson(res, 200, { ok: true, uptime: Math.round(process.uptime()) });
+      return;
+    }
+
+    // Every API route is flood-limited. Claude mode then counts separately,
+    // inside its own handler and only once the access code has passed.
+    if (url.pathname.startsWith('/api/')) {
+      const allowance = takeToken(clientKey(req), 'offline');
+      if (!allowance.ok) {
+        res.setHeader('retry-after', String(allowance.retryAfter));
+        throw Object.assign(
+          new Error('Too many requests. Wait a minute and try again.'),
+          { status: 429 },
+        );
+      }
+    }
+
     if (routes[key]) {
       await routes[key](req, res);
       return;
@@ -270,18 +332,41 @@ function listen(port, attemptsLeft = 10) {
   });
 
   server.listen(port, HOST, () => {
-    const url = `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${port}`;
+    const shown = HOST === '0.0.0.0' ? 'localhost' : HOST;
+    const limits = limitsForStatus();
     console.log('');
     console.log('  Humaniser is running');
-    console.log(`  ${url}`);
+    console.log(`  http://${shown}:${port}`);
     console.log('');
-    console.log(`  Offline rules engine: ready`);
+    console.log('  Offline rules engine: ready');
     console.log(`  Claude mode:          ${hasApiKeyInEnv() ? `ready (${MODEL})` : 'no API key found, offline mode still works'}`);
+
+    if (HOST === '0.0.0.0') {
+      console.log('');
+      console.log('  Reachable from the network.');
+      if (hasApiKeyInEnv() && !ACCESS_CODE) {
+        console.log('  WARNING: an API key is set but HUMANISER_ACCESS_CODE is not.');
+        console.log('           Anyone who reaches this URL can spend your API credit.');
+        console.log('           Set HUMANISER_ACCESS_CODE to a shared secret and restart.');
+      } else if (ACCESS_CODE) {
+        console.log('  Claude mode is behind an access code.');
+      }
+      console.log(`  Hourly limits per client: ${limits.claude} Claude, ${limits.offline} offline.`);
+    }
     console.log('');
     console.log('  Press Control-C to stop.');
     console.log('');
   });
 }
+
+const sweeper = setInterval(() => sweepBuckets(), 10 * 60 * 1000);
+sweeper.unref();
+
+// A safety net, not an excuse. Every handler catches its own errors; this keeps
+// a missed one from ending a running deployment.
+process.on('unhandledRejection', (reason) => {
+  console.error('[humaniser] unhandled rejection:', reason);
+});
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {

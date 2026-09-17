@@ -552,3 +552,15 @@ button.primary.small { padding: 6px 12px; font-size: 13px; }
 .check-detail { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-2); }
 .sub.muted { opacity: 0.45; }
 .sub.muted .sub-bar { background: var(--ink-muted); }
+
+/* ---------- access code ---------- */
+input[type="password"] {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  width: 150px;
+}

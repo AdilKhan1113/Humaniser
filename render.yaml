@@ -1,0 +1,22 @@
+# Render blueprint. Point Render at this repository and it reads this file.
+# The two secrets are set in the dashboard or with the Render CLI, never here.
+services:
+  - type: web
+    name: humaniser
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: "1"
+      - key: NODE_ENV
+        value: production
+      # sync:false means "ask me for this, do not store it in the repo".
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: HUMANISER_ACCESS_CODE
+        sync: false
