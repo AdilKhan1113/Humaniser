@@ -92,9 +92,32 @@ test('a dot inside a URL or a decimal does not end a sentence', () => {
   assert.equal(splitSentences('Costs rose 3.5% last year. Sales fell.').length, 2);
 });
 
-test('a line break ends a sentence even with no full stop', () => {
+test('a heading or list item stands alone without a full stop', () => {
   assert.deepEqual(
-    splitSentences('# Title\nA line\nAnother line').map((s) => s.text),
-    ['# Title', 'A line', 'Another line'],
+    splitSentences('# Title\nSome prose follows.').map((s) => s.text),
+    ['# Title', 'Some prose follows.'],
   );
+  assert.deepEqual(
+    splitSentences('- first item\n- second item').map((s) => s.text),
+    ['- first item', '- second item'],
+  );
+});
+
+test('a blank line ends a sentence that has no full stop', () => {
+  assert.deepEqual(
+    splitSentences('A line with no stop\n\nA new paragraph').map((s) => s.text),
+    ['A line with no stop', 'A new paragraph'],
+  );
+});
+
+test('a hard line wrap does not end a sentence', () => {
+  // Text pasted from a PDF or a Word document arrives wrapped mid-sentence.
+  // Treating each wrapped line as a sentence put a capital letter in the middle
+  // of every one of them.
+  const wrapped = 'Milo\'s relationships with students constitute a microsystem influence\n'
+    + 'characterised by sustained emotional demand that runs one way, returning\n'
+    + 'recognition rather than support.';
+  const sentences = splitSentences(wrapped);
+  assert.equal(sentences.length, 1);
+  assert.equal(sentences[0].words.length, 22);
 });

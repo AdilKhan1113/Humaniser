@@ -197,3 +197,31 @@ test('capitalises a quotation that starts mid-sentence', () => {
     'She said, "We don\'t have the data."',
   );
 });
+
+test('never capitalises the far side of a line wrap', () => {
+  // The bug this guards: every wrapped line was read as a new sentence, so each
+  // one got a capital letter dropped into the middle of a sentence.
+  const wrapped = 'Milo\'s relationships constitute a microsystem influence characterised\n'
+    + 'by sustained emotional demand that runs largely one way, returning recognition\n'
+    + 'rather than support, and extending well beyond the teaching role.';
+  const out = run(wrapped);
+  assert.match(out, /\nby sustained/, 'the wrapped line must stay lowercase');
+  assert.match(out, /\nrather than support/, 'the wrapped line must stay lowercase');
+  assert.doesNotMatch(out, /\nBy sustained/);
+  assert.doesNotMatch(out, /\nRather than/);
+});
+
+test('keeps a word that only looks like padding', () => {
+  // "rather" is padding in "rather good" and load-bearing in "rather than".
+  // Deleting it changed what the sentence said.
+  assert.match(run('It returns recognition rather than support.'), /rather than support/);
+  assert.match(run('Most teams would rather have the guess.'), /would rather have/);
+  assert.match(run('The plan is not quite ready.'), /n't quite ready/);
+  assert.match(run('Thanks very much for the note.'), /very much/);
+  // Adverbs of manner survive too, where the word carries the meaning.
+  assert.match(run('Speak clearly and slowly.'), /Speak clearly and slowly/);
+  assert.match(run('The panel judged it fairly and quickly.'), /judged it fairly/);
+  // Still cut where it genuinely adds nothing.
+  assert.equal(run('This is a very good idea.'), 'This is a good idea.');
+  assert.match(run('Clearly, the plan works.'), /^The plan works/);
+});

@@ -845,6 +845,35 @@ const HEDGES = [
   'undoubtedly', 'definitely', 'truly', 'indeed', 'simply', 'clearly',
 ];
 
+// Only these get deleted. The four left out — fairly, clearly, simply, truly —
+// double as adverbs of manner, where the word carries real meaning: "judged
+// fairly by the panel" and "speak clearly and slowly" lose their sense if it
+// goes. They are still reported, just never cut.
+const HEDGES_SAFE_TO_CUT = HEDGES.filter(
+  (word) => !['fairly', 'clearly', 'simply', 'truly'].includes(word),
+);
+
+/**
+ * Some of these words are only padding in some positions. "rather" is padding
+ * in "rather good" but load-bearing in "rather than" and "would rather", and
+ * "quite" carries the meaning in "not quite ready". Both the rewriter and the
+ * report ask this before touching one.
+ *
+ * @param {string} word the matched hedge
+ * @param {string} before text immediately preceding it
+ * @param {string} after text immediately following it
+ */
+function hedgeIsLoadBearing(word, before, after) {
+  const w = word.toLowerCase();
+  if (w === 'rather') {
+    if (/^\s*than\b/i.test(after)) return true;              // rather than
+    if (/\b(?:would|should|could|'d)\s+$/i.test(before)) return true;  // would rather
+  }
+  if (w === 'quite' && /(?:\bnot|n't)\s+$/i.test(before)) return true; // not quite / isn't quite
+  if (w === 'very' && /^\s*(?:much|well|many|few|little)\b/i.test(after)) return true;
+  return false;
+}
+
 const EXPANSIONS = [
   // Negations read naturally contracted almost everywhere, so these are not rationed.
   { find: /\bdo not\b/g, use: "don't", always: true },
@@ -931,7 +960,7 @@ const NATURAL_TRANSITIONS = [
   'to be fair', 'either way', 'granted', 'instead', 'because of that',
 ];
 
-return { INFLATED, FLAG_ONLY, AI_TELLS, SELF_REFERENCE, NOMINALIZATIONS, HEDGES, EXPANSIONS, COORDINATING_CONJUNCTIONS, SUBJECT_STARTERS, FINITE_VERBS, DETERMINERS, NATURAL_TRANSITIONS };
+return { INFLATED, FLAG_ONLY, AI_TELLS, SELF_REFERENCE, NOMINALIZATIONS, HEDGES, HEDGES_SAFE_TO_CUT, hedgeIsLoadBearing, EXPANSIONS, COORDINATING_CONJUNCTIONS, SUBJECT_STARTERS, FINITE_VERBS, DETERMINERS, NATURAL_TRANSITIONS };
 })();
 
 // ---- lib/common-words.js ----
@@ -1480,6 +1509,10 @@ const { findPassives } = NS_passive;
 const MIN_WORDS = 6;
 const MAX_WORDS = 20;
 
+// Headings, list items and blockquotes stand alone as units. A line that is not
+// one of these and does not end in punctuation is a wrap, not a sentence.
+const STRUCTURAL_LINE = /^\s*(?:[-*+]|\d+[.)]|>+|#{1,6})\s/;
+
 // These never end a sentence, whatever follows them.
 const NEVER_FINAL = new Set([
   'mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs', 'inc', 'ltd', 'co',
@@ -1514,10 +1547,16 @@ function splitSentences(text) {
     const lastWord = (tail.match(/([A-Za-z]+)\.$/) || [])[1] || '';
     const endsSentence = /[.!?]["')\]]*$/.test(tail);
 
-    // A line break ends the unit even with no full stop, which is what keeps a
-    // heading or a bullet from being glued to the line after it. Without this
-    // an unpunctuated heading swallowed the rest of the document.
-    const atLineEnd = re.lastIndex >= text.length || text[re.lastIndex] === '\n';
+    // A line break ends the unit only at a structural boundary: the end of the
+    // text, a blank line between paragraphs, or a heading or list item on
+    // either side of the break. A bare wrap mid-sentence must NOT end it —
+    // text pasted from a PDF or a Word document is full of them, and treating
+    // each wrapped line as a sentence capitalised the middle of every one.
+    const rest = text.slice(re.lastIndex);
+    const atStructuralBreak = re.lastIndex >= text.length
+      || /^\n[ \t]*\n/.test(rest)
+      || (rest.startsWith('\n')
+        && (STRUCTURAL_LINE.test(pending.text.trimStart()) || STRUCTURAL_LINE.test(rest.slice(1))));
 
     // Sentence punctuation only counts when whitespace or the end of the text
     // follows it. Otherwise "https://example.com/x" is read as two sentences.
@@ -1526,7 +1565,7 @@ function splitSentences(text) {
     // A title or a bare initial always continues. A dotted abbreviation
     // ("p.m.", "e.g.") might genuinely end the sentence, so the next character
     // decides: a capital means a new sentence, lowercase means this one goes on.
-    let keepGoing = !(endsSentence && followedBySpace) && !atLineEnd;
+    let keepGoing = !(endsSentence && followedBySpace) && !atStructuralBreak;
     if (endsSentence && lastWord) {
       const key = lastWord.toLowerCase();
       const dotted = /(?:[A-Za-z]\.){2,}$/.test(tail);
@@ -2056,7 +2095,7 @@ const NS_rules = (() => {
 // leaves the case to the report. A missed fix is a footnote. A wrong fix is a
 // sentence the writer has to untangle.
 
-const { AI_TELLS, INFLATED, NOMINALIZATIONS, HEDGES, EXPANSIONS } = NS_lexicon;
+const { AI_TELLS, INFLATED, NOMINALIZATIONS, HEDGES, HEDGES_SAFE_TO_CUT, EXPANSIONS, hedgeIsLoadBearing } = NS_lexicon;
 const { splitSentences, findCommaSplices, looksIndependent } = NS_analyze;
 const { flipPassiveClause } = NS_passive;
 const { isKnownParticiple } = NS_verbs;
@@ -2392,13 +2431,30 @@ function addContractions(text, log, ratio) {
   return out;
 }
 
+/**
+ * Cuts intensifiers that add nothing, in two passes with different risk.
+ *
+ * Followed by a comma the word is a sentence adverb ("Clearly, the plan
+ * works"), which is padding whichever word it is. Followed by a space it sits
+ * against the next word, and there the four manner adverbs are left alone:
+ * cutting "clearly" out of "speak clearly and slowly" removes the point of the
+ * sentence. Either way the context is checked, because deleting the "rather"
+ * in "rather than" changes what the sentence says.
+ */
 function trimPadding(text, log) {
-  const group = HEDGES.join('|');
-  let out = text;
-  // "Clearly, the plan works" -> "The plan works"
-  out = applyRule(out, new RegExp(`\\b(?:${group}),\\s+`, 'gi'), '', log, 'cut padding');
-  // "a very good idea" -> "a good idea"
-  out = applyRule(out, new RegExp(`\\b(?:${group})\\s+(?=[a-z])`, 'gi'), '', log, 'cut padding');
+  const cut = (out, group, pattern) => {
+    const re = new RegExp(`\\b(${group})${pattern}`, 'gi');
+    return out.replace(re, (whole, word, offset, full) => {
+      const before = full.slice(Math.max(0, offset - 16), offset);
+      const after = full.slice(offset + whole.length, offset + whole.length + 16);
+      if (hedgeIsLoadBearing(word, before, after)) return whole;
+      log.add('cut padding', whole, '');
+      return '';
+    });
+  };
+
+  let out = cut(text, HEDGES.join('|'), ',\\s+');
+  out = cut(out, HEDGES_SAFE_TO_CUT.join('|'), '\\s+(?=[a-z])');
   return out;
 }
 
@@ -2416,12 +2472,19 @@ function tidy(text) {
   // A quotation opening mid-sentence starts a sentence of its own.
   out = out.replace(/([,:]\s*["“'])\s*([a-z])/g, (m, lead, letter) => lead + letter.toUpperCase());
 
-  // Sentence-initial capitals, which phrase removal often knocks out.
+  // Sentence-initial capitals, which phrase removal often knocks out. The
+  // position has to be a real sentence opening — the start of the text, after a
+  // blank line, or after sentence punctuation — and never the far side of a
+  // line wrap, which would put a capital in the middle of a sentence.
   for (const s of splitSentences(out).reverse()) {
     const first = out[s.start];
-    if (first && /[a-z]/.test(first)) {
-      out = out.slice(0, s.start) + first.toUpperCase() + out.slice(s.start + 1);
-    }
+    if (!first || !/[a-z]/.test(first)) continue;
+    const preceding = out.slice(0, s.start);
+    const opensBlock = preceding.trim() === ''
+      || /\n[ \t]*\n[ \t]*$/.test(preceding)
+      || /[.!?]["')\]]*[ \t]*$/.test(preceding);
+    if (!opensBlock) continue;
+    out = out.slice(0, s.start) + first.toUpperCase() + out.slice(s.start + 1);
   }
   return out.replace(/\bi\b(?!\.)/g, 'I').trim();
 }
