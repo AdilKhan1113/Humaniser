@@ -1,0 +1,18 @@
+{
+  "name": "humaniser",
+  "version": "1.0.0",
+  "description": "A local web app that rewrites stiff, AI-flavoured prose into something a person would actually say.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0"
+  },
+  "private": true
+}

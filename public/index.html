@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Humaniser</title>
+<meta name="description" content="Rewrites stiff, machine-flavoured prose into something a person would actually say.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✍️</text></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">✍</span>
+    <div>
+      <h1>Humaniser</h1>
+      <p class="brand-sub">Stiff prose in. Something a person would say out.</p>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="field">
+      <label for="mode">Engine</label>
+      <select id="mode">
+        <option value="local" selected>Offline rules</option>
+        <option value="claude">Claude</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="strength">Strength</label>
+      <select id="strength">
+        <option value="light">Light touch</option>
+        <option value="balanced" selected>Balanced</option>
+        <option value="bold">Bold</option>
+      </select>
+    </div>
+    <div class="field" id="effort-field" hidden>
+      <label for="effort">Thinking</label>
+      <select id="effort">
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high" selected>High</option>
+        <option value="xhigh">Very high</option>
+      </select>
+    </div>
+    <button id="run" class="primary" type="button">
+      Humanise <kbd>⌘↵</kbd>
+    </button>
+  </div>
+</header>
+
+<p class="hint" id="engine-note" role="status"></p>
+
+<main>
+  <section class="panes">
+    <div class="pane">
+      <div class="pane-head">
+        <h2>Your text</h2>
+        <div class="pane-tools">
+          <span class="counter" id="in-count">0 words</span>
+          <button type="button" class="ghost" id="sample">Paste a sample</button>
+          <button type="button" class="ghost" id="clear">Clear</button>
+        </div>
+      </div>
+      <textarea id="input" spellcheck="true" placeholder="Paste the text that reads like a committee wrote it…"></textarea>
+      <div class="pane-foot">
+        <button type="button" class="ghost" id="analyse">Just score it, don't change it</button>
+      </div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-head">
+        <h2>Rewritten</h2>
+        <div class="pane-tools">
+          <span class="counter" id="out-count">0 words</span>
+          <button type="button" class="ghost" id="copy" disabled>Copy</button>
+          <button type="button" class="ghost" id="use" disabled>Use as input</button>
+        </div>
+      </div>
+      <div id="output" class="output" aria-live="polite" aria-busy="false"><p class="placeholder">The rewrite lands here.</p></div>
+      <div class="pane-foot">
+        <span id="stream-status" class="stream-status"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="dashboard" id="dashboard" hidden>
+    <div class="card hero-card">
+      <p class="card-label">Human score</p>
+      <div class="hero-row">
+        <p class="hero" id="hero-score">—</p>
+        <p class="delta" id="hero-delta"></p>
+      </div>
+      <div class="meter" role="img" aria-labelledby="hero-verdict">
+        <div class="meter-fill" id="meter-fill" style="width:0%"></div>
+      </div>
+      <p class="verdict" id="hero-verdict">Waiting for text.</p>
+      <dl class="facts" id="facts"></dl>
+    </div>
+
+    <div class="card">
+      <p class="card-label">What is working, what is not</p>
+      <p class="card-note">Six qualities, each scored out of 100.</p>
+      <div id="subscores" class="subscores"></div>
+    </div>
+
+    <div class="card wide">
+      <div class="card-head">
+        <div>
+          <p class="card-label">Sentence rhythm</p>
+          <p class="card-note" id="rhythm-note">Words per sentence, in order. Flat means robotic.</p>
+        </div>
+        <button type="button" class="ghost" id="toggle-table" aria-expanded="false">Show table</button>
+      </div>
+      <div id="rhythm-chart" class="chart"></div>
+      <div id="rhythm-table" class="table-wrap" hidden></div>
+    </div>
+
+    <div class="card wide">
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" class="tab active" data-tab="issues" aria-selected="true">Findings <span class="pill" id="issues-count">0</span></button>
+        <button type="button" role="tab" class="tab" data-tab="changes" aria-selected="false">Changes made <span class="pill" id="changes-count">0</span></button>
+      </div>
+      <div id="issues" class="list" role="tabpanel"></div>
+      <div id="changes" class="list" role="tabpanel" hidden></div>
+    </div>
+  </section>
+</main>
+
+<div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+
+<footer>
+  <p>Runs on your machine. Nothing leaves it in offline mode.</p>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
