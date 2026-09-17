@@ -2,7 +2,7 @@
 
 Paste writing that sounds like a committee produced it. Get back something a person would say.
 
-Humaniser runs on your Mac as a small local web app. It scores your text against a house style, shows you exactly where the prose stiffens, and rewrites it two ways: with an offline rules engine that needs no account and no network, or with Claude when you want real judgement applied to rhythm and metaphor.
+Humaniser runs as a small local web app on macOS or Linux. It scores your text against a house style, shows you exactly where the prose stiffens, and rewrites it two ways: with an offline rules engine that needs no account and no network, or with Claude when you want real judgement applied to rhythm and metaphor.
 
 **No API key required.** The offline engine is the default and it needs nothing — no account, no key, no network. Claude is an optional extra for people who already have API access.
 
@@ -10,15 +10,25 @@ Humaniser runs on your Mac as a small local web app. It scores your text against
 
 Dark mode comes along for free, following whatever your Mac is set to: [see it](docs/screenshot-dark.png).
 
-## Set it up on a MacBook
+## Set it up
 
-You need Node 18 or newer. Check with `node -v`. If the command is missing, install it with [Homebrew](https://brew.sh):
+You need Node 18 or newer, and nothing else. Check what you have with `node -v`.
+
+**macOS**, via [Homebrew](https://brew.sh):
 
 ```bash
 brew install node
 ```
 
-Then:
+**Linux.** Your distribution's package may be too old, so check the version after installing. If it is below 18, [nvm](https://github.com/nvm-sh/nvm) is the reliable way round it:
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+exec $SHELL
+nvm install 22
+```
+
+Then, on either:
 
 ```bash
 git clone https://github.com/AdilKhan1113/Humaniser.git
@@ -26,7 +36,9 @@ cd Humaniser
 ./start.sh
 ```
 
-That installs the one dependency, starts the server and opens your browser at `http://127.0.0.1:8787`. The first run takes a few seconds. Every run after that is instant.
+If the repository is private, that clone will ask for credentials, and GitHub has not accepted account passwords since 2021. Either run `gh auth login` first, or generate a [personal access token](https://github.com/settings/tokens) with the `repo` scope and paste the token in place of the password.
+
+That installs the one dependency, starts the server and opens your browser at `http://127.0.0.1:8787`. On Linux it opens through `xdg-open`; if your box has no desktop session it just prints the address for you to open yourself. The first run takes a few seconds. Every run after that is instant.
 
 Prefer to do it by hand? `npm install && npm start` does the same thing without opening a browser.
 
