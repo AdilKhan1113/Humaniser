@@ -5,10 +5,13 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "Node.js is not installed."
+  echo "Node.js is not installed. Humaniser needs it to run."
   echo
-  echo "Install it with Homebrew:   brew install node"
-  echo "Or download it from:        https://nodejs.org"
+  echo "Easiest on a Mac:  download the LTS installer from https://nodejs.org"
+  echo "                   and double-click it. No terminal needed."
+  echo "With Homebrew:     brew install node"
+  echo
+  echo "Then open a new terminal and run ./start.sh again."
   exit 1
 fi
 

@@ -12,9 +12,17 @@ Dark mode comes along for free, following whatever your Mac is set to: [see it](
 
 ## Set it up
 
-You need Node 18 or newer, and nothing else. Check what you have with `node -v`.
+Node 18 or newer is the only thing you need, and macOS does not come with it. Check whether you already have it:
 
-**macOS**, via [Homebrew](https://brew.sh):
+```bash
+node -v
+```
+
+A version number means you are set. "command not found" means you need it, so pick one of these.
+
+**macOS, no terminal required.** Go to [nodejs.org](https://nodejs.org), download the macOS installer for the LTS version, and double-click it. It is a small, ordinary `.pkg` — next, next, done. This is the path to take if you do not already use Homebrew, because Homebrew itself wants Xcode's command line tools first, which is a far bigger download than Node.
+
+**macOS, if you already have [Homebrew](https://brew.sh):**
 
 ```bash
 brew install node
@@ -28,7 +36,7 @@ exec $SHELL
 nvm install 22
 ```
 
-Then, on either:
+Whichever route you took, close the terminal afterwards and open a fresh one, so the new `node` command is on your path. Then:
 
 ```bash
 git clone https://github.com/AdilKhan1113/Humaniser.git
@@ -36,11 +44,11 @@ cd Humaniser
 ./start.sh
 ```
 
-If the repository is private, that clone will ask for credentials, and GitHub has not accepted account passwords since 2021. Either run `gh auth login` first, or generate a [personal access token](https://github.com/settings/tokens) with the `repo` scope and paste the token in place of the password.
-
 That installs the one dependency, starts the server and opens your browser at `http://127.0.0.1:8787`. On Linux it opens through `xdg-open`; if your box has no desktop session it just prints the address for you to open yourself. The first run takes a few seconds. Every run after that is instant.
 
 Prefer to do it by hand? `npm install && npm start` does the same thing without opening a browser.
+
+Cloning a *private* fork is the one case that needs more: GitHub has not accepted account passwords for Git since 2021, so run `gh auth login` first, or use a [personal access token](https://github.com/settings/tokens) with the `repo` scope in place of the password.
 
 ### Optional: turn on Claude
 
