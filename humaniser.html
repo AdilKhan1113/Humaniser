@@ -456,6 +456,113 @@ footer {
   .controls { width: 100%; }
 }
 
+/* ---------- marking guide ---------- */
+.guide {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.guide-head {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.guide-head h2 { font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.tag {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.guide-sub { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-muted); max-width: 70ch; }
+
+#guide-body { margin-top: 14px; }
+
+.dropzone {
+  border: 1px dashed var(--axis);
+  border-radius: var(--radius-sm);
+  padding: 18px 16px;
+  text-align: center;
+  transition: border-color 120ms, background 120ms;
+}
+.dropzone.over { border-color: var(--accent); background: var(--accent-wash); }
+.dropzone-main { margin: 0; font-size: 14px; }
+.dropzone-or { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-muted); }
+
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+#guide-text {
+  width: 100%;
+  margin-top: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunk);
+  padding: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.guide-actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+button.primary.small { padding: 6px 12px; font-size: 13px; }
+.guide-status { font-size: 12.5px; color: var(--ink-muted); }
+.guide-status.error { color: var(--over); }
+.guide-status.ok { color: var(--good-text); }
+
+.guide-summary { margin-top: 14px; border-top: 1px solid var(--grid); padding-top: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.chip {
+  font-size: 12px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-sunk);
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: var(--ink-2);
+}
+.chip strong { color: var(--ink); font-weight: 600; }
+.overrides { margin: 0; font-size: 12.5px; color: var(--ink-2); }
+.overrides li { margin: 3px 0; }
+.guide-terms { margin: 8px 0 0; font-size: 12.5px; color: var(--ink-muted); }
+
+/* ---------- rubric checks ---------- */
+.checks { display: flex; flex-direction: column; gap: 6px; }
+.check {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 9px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunk);
+}
+/* The mark is a glyph plus a worded label, never colour alone. */
+.check-mark { font-size: 13px; line-height: 1.5; text-align: center; }
+.check.pass .check-mark { color: var(--good-text); }
+.check.fail .check-mark { color: var(--over); }
+.check.warn .check-mark { color: var(--ink-2); }
+.check.info .check-mark { color: var(--ink-muted); }
+.check-label { margin: 0; font-size: 13px; font-weight: 600; }
+.check-detail { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-2); }
+.sub.muted { opacity: 0.45; }
+.sub.muted .sub-bar { background: var(--ink-muted); }
+
 </style>
 </head>
 <body>
@@ -503,6 +610,31 @@ footer {
 <p class="hint" id="engine-note" role="status"></p>
 
 <main>
+  <section class="guide" id="guide">
+    <div class="guide-head">
+      <div>
+        <h2>Marking guide <span class="tag">optional</span></h2>
+        <p class="guide-sub" id="guide-sub">Give it your rubric and it follows the rubric's rules instead of its own where the two disagree.</p>
+      </div>
+      <button type="button" class="ghost" id="guide-toggle" aria-expanded="false" aria-controls="guide-body">Add a guide</button>
+    </div>
+
+    <div id="guide-body" hidden>
+      <div class="dropzone" id="dropzone">
+        <p class="dropzone-main">Drop a <strong>.docx</strong> or <strong>.txt</strong> here</p>
+        <p class="dropzone-or">or <button type="button" class="linkish" id="guide-pick">choose a file</button>, or paste it below</p>
+        <input type="file" id="guide-file" accept=".docx,.txt,.md,.markdown,.rtf,.csv" hidden>
+      </div>
+      <textarea id="guide-text" rows="4" placeholder="Paste the rubric or marking guide here…"></textarea>
+      <div class="guide-actions">
+        <button type="button" class="primary small" id="guide-read">Read the guide</button>
+        <button type="button" class="ghost" id="guide-clear">Remove</button>
+        <span class="guide-status" id="guide-status" role="status"></span>
+      </div>
+      <div id="guide-summary" class="guide-summary" hidden></div>
+    </div>
+  </section>
+
   <section class="panes">
     <div class="pane">
       <div class="pane-head">
@@ -536,6 +668,12 @@ footer {
   </section>
 
   <section class="dashboard" id="dashboard" hidden>
+    <div class="card wide" id="rubric-card" hidden>
+      <p class="card-label">Against the marking guide</p>
+      <p class="card-note" id="rubric-note">Only what can be counted. Whether the writing earns the marks is a marker's call.</p>
+      <div id="rubric-checks" class="checks"></div>
+    </div>
+
     <div class="card hero-card">
       <p class="card-label">Human score</p>
       <div class="hero-row">
@@ -929,6 +1067,39 @@ const EXPANSIONS = [
   { find: /\b(I|you|we|they) have been\b/g, use: (m, g1) => `${g1}'ve been`, always: true },
 ];
 
+/**
+ * Real contractions only. Either a negated auxiliary ("isn't", "won't") or a
+ * pronoun-like word joined to a short verb ("it's", "you're", "I've"). A bare
+ * apostrophe-s after a noun is a possessive, not a contraction: "Milo's
+ * relationships" says nothing about how conversational the writing is.
+ */
+const CONTRACTION_RE = new RegExp(
+  String.raw`\b(?:[A-Za-z]+n['’]t` +
+    String.raw`|(?:I|you|we|they|he|she|it|that|this|there|here|what|who|where|when|how|let|` +
+    String.raw`who|which|everyone|someone|nobody)['’](?:m|re|ve|ll|d|s))\b`,
+  'gi',
+);
+
+// Expanding contractions, for the marking guides that forbid them. Written out
+// rather than derived from EXPANSIONS, because "it's" maps back to "it is" but
+// "it's been" has to become "it has been".
+const CONTRACTION_EXPANSIONS = [
+  { find: /\bcan['’]t\b/gi, use: 'cannot' },
+  { find: /\bwon['’]t\b/gi, use: 'will not' },
+  { find: /\bshan['’]t\b/gi, use: 'shall not' },
+  { find: /\bain['’]t\b/gi, use: 'is not' },
+  { find: /\b(\w+)n['’]t\b/gi, use: (m, stem) => `${stem} not` },
+  { find: /\b(it|he|she|that|there|this|who|what)['’]s\s+been\b/gi, use: (m, w) => `${w} has been` },
+  { find: /\b(I|you|we|they)['’]ve\b/gi, use: (m, w) => `${w} have` },
+  { find: /\b(it|he|she|that|there|this|who|what|where|when|how|everyone|someone|nobody)['’]s\b/gi, use: (m, w) => `${w} is` },
+  { find: /\bI['’]m\b/g, use: 'I am' },
+  { find: /\b(you|we|they|who)['’]re\b/gi, use: (m, w) => `${w} are` },
+  { find: /\b(I|you|we|they|he|she|it|that|there|who)['’]ll\b/gi, use: (m, w) => `${w} will` },
+  { find: /\b(I|you|we|they|he|she|it|that|there|who)['’]d\b/gi, use: (m, w) => `${w} would` },
+  { find: /\blet['’]s\b/gi, use: 'let us' },
+  { find: /\b(would|should|could|must|might)['’]ve\b/gi, use: (m, w) => `${w} have` },
+];
+
 const COORDINATING_CONJUNCTIONS = ['and', 'but', 'for', 'or', 'nor', 'so', 'yet'];
 
 // A clause that opens with one of these is almost certainly independent, which
@@ -960,7 +1131,7 @@ const NATURAL_TRANSITIONS = [
   'to be fair', 'either way', 'granted', 'instead', 'because of that',
 ];
 
-return { INFLATED, FLAG_ONLY, AI_TELLS, SELF_REFERENCE, NOMINALIZATIONS, HEDGES, HEDGES_SAFE_TO_CUT, hedgeIsLoadBearing, EXPANSIONS, COORDINATING_CONJUNCTIONS, SUBJECT_STARTERS, FINITE_VERBS, DETERMINERS, NATURAL_TRANSITIONS };
+return { INFLATED, FLAG_ONLY, AI_TELLS, SELF_REFERENCE, NOMINALIZATIONS, HEDGES, HEDGES_SAFE_TO_CUT, hedgeIsLoadBearing, EXPANSIONS, CONTRACTION_RE, CONTRACTION_EXPANSIONS, COORDINATING_CONJUNCTIONS, SUBJECT_STARTERS, FINITE_VERBS, DETERMINERS, NATURAL_TRANSITIONS };
 })();
 
 // ---- lib/common-words.js ----
@@ -1500,7 +1671,7 @@ const NS_analyze = (() => {
 // Nothing here rewrites anything; the report drives the dashboard and tells the
 // rules engine's output apart from its input.
 
-const { AI_TELLS, SELF_REFERENCE, INFLATED, NOMINALIZATIONS, HEDGES, EXPANSIONS, COORDINATING_CONJUNCTIONS, SUBJECT_STARTERS, FINITE_VERBS, DETERMINERS, NATURAL_TRANSITIONS, FLAG_ONLY } = NS_lexicon;
+const { AI_TELLS, SELF_REFERENCE, INFLATED, NOMINALIZATIONS, HEDGES, EXPANSIONS, COORDINATING_CONJUNCTIONS, SUBJECT_STARTERS, FINITE_VERBS, DETERMINERS, NATURAL_TRANSITIONS, FLAG_ONLY, CONTRACTION_RE } = NS_lexicon;
 const { isCommonWord } = NS_common_words;
 const { VERB_FORMS } = NS_verbs;
 const { findPassives } = NS_passive;
@@ -1714,8 +1885,12 @@ const INFLATED_RE = new RegExp(
  * Full report for a piece of text.
  * @param {string} text
  */
-function analyze(text) {
+function analyze(text, options = {}) {
   const clean = String(text || '');
+  // A marking guide can forbid the very things the house style asks for. Where
+  // it does, the report stops asking for them: an essay required to be formal
+  // should not be marked down for having no contractions.
+  const constraints = options.constraints || {};
   const sentences = splitSentences(clean);
   const words = tokenise(clean);
   const lengths = sentences.map((s) => s.words.length);
@@ -1910,8 +2085,8 @@ function analyze(text) {
     const re = new RegExp(entry.find.source, entry.find.flags);
     contractionSlots += (clean.match(re) || []).length;
   }
-  const contractionsUsed = (clean.match(/\b\w+['’](?:t|s|re|ve|ll|d|m)\b/gi) || []).length;
-  if (contractionSlots >= 3 && contractionsUsed === 0) {
+  const contractionsUsed = (clean.match(CONTRACTION_RE) || []).length;
+  if (contractionSlots >= 3 && contractionsUsed === 0 && !constraints.noContractions) {
     issues.push(issue(clean, {
       type: 'no-contractions',
       severity: 'high',
@@ -1945,7 +2120,7 @@ function analyze(text) {
 
   // --- reader connection --------------------------------------------------
   const secondPerson = (clean.match(/\b(?:you|your|you're|yours)\b/gi) || []).length;
-  if (words.length > 80 && secondPerson === 0) {
+  if (words.length > 80 && secondPerson === 0 && !constraints.noSecondPerson) {
     issues.push(issue(clean, {
       type: 'no-you',
       severity: 'medium',
@@ -2008,7 +2183,17 @@ function analyze(text) {
     )),
   };
 
-  const weights = { rhythm: 0.22, voice: 0.2, plainness: 0.2, warmth: 0.14, variety: 0.12, concision: 0.12 };
+  // Warmth is contractions plus direct address. A guide that bans both has made
+  // it unscoreable, so it drops out and its weight is shared by the rest rather
+  // than dragging the headline down for following instructions.
+  const warmthApplies = !(constraints.noContractions && constraints.noSecondPerson);
+  const baseWeights = { rhythm: 0.22, voice: 0.2, plainness: 0.2, warmth: 0.14, variety: 0.12, concision: 0.12 };
+  const weights = { ...baseWeights };
+  if (!warmthApplies) {
+    delete weights.warmth;
+    const total = Object.values(weights).reduce((a, b) => a + b, 0);
+    for (const key of Object.keys(weights)) weights[key] /= total;
+  }
   const overall = Math.round(
     Object.entries(weights).reduce((sum, [k, w]) => sum + subscores[k] * w, 0),
   );
@@ -2056,6 +2241,8 @@ function analyze(text) {
       selfReferences: selfRefs.length,
     },
     subscores,
+    // The dashboard greys out a subscore the guide has made meaningless.
+    scoredQualities: Object.keys(weights),
     score: overall,
     verdict: verdictFor(overall),
     issues,
@@ -2095,7 +2282,7 @@ const NS_rules = (() => {
 // leaves the case to the report. A missed fix is a footnote. A wrong fix is a
 // sentence the writer has to untangle.
 
-const { AI_TELLS, INFLATED, NOMINALIZATIONS, HEDGES, HEDGES_SAFE_TO_CUT, EXPANSIONS, hedgeIsLoadBearing } = NS_lexicon;
+const { AI_TELLS, INFLATED, NOMINALIZATIONS, HEDGES, HEDGES_SAFE_TO_CUT, EXPANSIONS, CONTRACTION_EXPANSIONS, hedgeIsLoadBearing } = NS_lexicon;
 const { splitSentences, findCommaSplices, looksIndependent } = NS_analyze;
 const { flipPassiveClause } = NS_passive;
 const { isKnownParticiple } = NS_verbs;
@@ -2246,13 +2433,17 @@ function unburyVerbs(text, log) {
  * would mean refusing both; splitting on the conjunction lets the half that can
  * be fixed get fixed.
  */
-function activeVoice(text, log) {
+function activeVoice(text, log, allowFirstPerson = true) {
   const sentences = splitSentences(text);
   let out = text;
   for (let i = sentences.length - 1; i >= 0; i -= 1) {
     const s = sentences[i];
     if (s.text.includes(';')) continue;
     const rebuilt = flipClauses(s.text);
+    // "The data was analysed by us" becomes "We analysed the data", which is
+    // exactly what a third-person-only marking guide forbids. Leave it passive
+    // and let the report mention it.
+    if (rebuilt && !allowFirstPerson && /^\s*(?:I|We|Our|My|Us)\b/.test(rebuilt)) continue;
     if (!rebuilt || rebuilt === s.text) continue;
     log.add('active voice', s.text, rebuilt);
     out = out.slice(0, s.start) + rebuilt + out.slice(s.end);
@@ -2441,6 +2632,15 @@ function addContractions(text, log, ratio) {
  * sentence. Either way the context is checked, because deleting the "rather"
  * in "rather than" changes what the sentence says.
  */
+/** Writes contractions out in full, for guides that require it. */
+function expandContractions(text, log) {
+  let out = text;
+  for (const { find, use } of CONTRACTION_EXPANSIONS) {
+    out = applyRule(out, find, use, log, 'contraction removed');
+  }
+  return out;
+}
+
 function trimPadding(text, log) {
   const cut = (out, group, pattern) => {
     const re = new RegExp(`\\b(${group})${pattern}`, 'gi');
@@ -2500,6 +2700,7 @@ function tidy(text) {
 function humanise(input, options = {}) {
   const strength = PROFILES[options.strength] ? options.strength : 'balanced';
   const profile = PROFILES[strength];
+  const constraints = options.constraints || {};
   const log = new ChangeLog();
 
   const masked = mask(String(input || ''));
@@ -2508,12 +2709,20 @@ function humanise(input, options = {}) {
   // Order is deliberate: passives are flipped while their participles are still
   // intact, and the comma rule runs after splitting, which can create new joins.
   if (profile.steps.tells) text = stripAiTells(text, log);
-  if (profile.steps.passive) text = activeVoice(text, log);
+  if (profile.steps.passive) text = activeVoice(text, log, !constraints.noFirstPerson);
   if (profile.steps.inflated) text = simplifyWords(text, log);
   if (profile.steps.nominals) text = unburyVerbs(text, log);
   if (profile.steps.split) text = splitLongSentences(text, log, profile.splitAt);
   if (profile.steps.splices) text = fixCommaSplices(text, log);
-  if (profile.steps.contractions) text = addContractions(text, log, profile.contractionRatio);
+
+  // A marking guide that bans contractions reverses this rule rather than
+  // merely disabling it: the draft's existing contractions are written out.
+  if (constraints.noContractions) {
+    text = expandContractions(text, log);
+  } else if (profile.steps.contractions) {
+    text = addContractions(text, log, profile.contractionRatio);
+  }
+
   if (profile.steps.hedges) text = trimPadding(text, log);
 
   text = tidy(text);
@@ -2523,10 +2732,550 @@ function humanise(input, options = {}) {
     changes: log.entries,
     byRule: log.byRule,
     profile: strength,
+    constraints,
   };
 }
 
 return { PROFILES, humanise };
+})();
+
+// ---- lib/rubric.js ----
+const NS_rubric = (() => {
+// Reading a marking guide.
+//
+// A rubric holds two kinds of requirement. Some are checkable by counting:
+// word limits, required sections, referencing style, whether the draft mentions
+// the concepts the guide keeps naming. Others need a marker's judgement —
+// "evaluates critically", "demonstrates深 understanding" — and no amount of
+// regex touches those. This module handles the first kind and says nothing
+// about the second.
+//
+// The important part is the style constraints. Academic guides often demand the
+// opposite of this app's house style: no contractions, third person only,
+// formal register. Left alone the rewriter would push a draft further from its
+// own marking guide, so a detected constraint switches the offending rule off.
+
+const { isCommonWord } = NS_common_words;
+const { CONTRACTION_RE } = NS_lexicon;
+
+const NUM = String.raw`(\d[\d,]*)`;
+
+/** Pulls a word limit out of the guide, in any of the usual phrasings. */
+function findWordLimit(text) {
+  const clean = text.replace(/,(?=\d{3}\b)/g, '');
+  const patterns = [
+    // 2000-2500 words
+    { re: new RegExp(String.raw`(\d[\d]*)\s*(?:-|–|—|to)\s*(\d[\d]*)\s*words`, 'i'), take: (m) => ({ min: +m[1], max: +m[2] }) },
+    // no more than / maximum of / up to 2000 words
+    { re: new RegExp(String.raw`(?:no more than|not exceed(?:ing)?|maximum(?: of)?|max(?: of)?|up to|within)\s*${NUM}\s*words`, 'i'), take: (m) => ({ max: +m[1] }) },
+    // at least / minimum of 1000 words
+    { re: new RegExp(String.raw`(?:at least|no fewer than|minimum(?: of)?|min(?: of)?)\s*${NUM}\s*words`, 'i'), take: (m) => ({ min: +m[1] }) },
+    // word limit: 2000 / word count: 2000
+    { re: new RegExp(String.raw`word\s*(?:limit|count|length)\s*(?:is|of|:|=)?\s*${NUM}`, 'i'), take: (m) => ({ target: +m[1] }) },
+    // 2000 words
+    { re: new RegExp(String.raw`${NUM}\s*words`, 'i'), take: (m) => ({ target: +m[1] }) },
+  ];
+
+  for (const { re, take } of patterns) {
+    const m = clean.match(re);
+    if (m) {
+      const limit = take(m);
+      // A stated tolerance turns a single target into a range.
+      const tol = clean.match(/(?:±|\+\/-|plus or minus)\s*(\d+)\s*%/i)
+        || clean.match(/within\s*(\d+)\s*%/i);
+      if (tol && limit.target) {
+        const slack = Math.round(limit.target * (Number(tol[1]) / 100));
+        return { target: limit.target, min: limit.target - slack, max: limit.target + slack, tolerance: Number(tol[1]) };
+      }
+      return limit;
+    }
+  }
+  return null;
+}
+
+// Each constraint is a house rule the guide forbids. `rule` names what gets
+// switched off in the rewriter.
+const STYLE_RULES = [
+  {
+    key: 'noContractions',
+    label: 'No contractions',
+    rule: 'contractions',
+    patterns: [
+      /avoid(?:\s+the\s+use\s+of)?\s+contractions/i,
+      /(?:do\s*n[o']?t|don't|never)\s+use\s+contractions/i,
+      /no\s+contractions/i,
+      /contractions\s+(?:are\s+)?(?:should\s+be\s+)?(?:not\s+)?(?:avoided|discouraged|unacceptable)/i,
+      /write\s+(?:words\s+)?in\s+full/i,
+    ],
+  },
+  {
+    key: 'noFirstPerson',
+    label: 'Third person only',
+    rule: 'firstPerson',
+    patterns: [
+      /avoid(?:\s+the\s+use\s+of)?\s+(?:the\s+)?first[-\s]person/i,
+      /(?:do\s*n[o']?t|don't|never)\s+use\s+(?:the\s+)?first[-\s]person/i,
+      /no\s+first[-\s]person/i,
+      /third[-\s]person\s+(?:only|throughout|perspective|voice)/i,
+      /writ(?:e|ten)\s+in\s+the\s+third[-\s]person/i,
+      /avoid\s+(?:using\s+)?["“']?I["”']?\s+and\s+["“']?we["”']?/i,
+    ],
+  },
+  {
+    key: 'noSecondPerson',
+    label: 'Do not address the reader',
+    rule: 'secondPerson',
+    patterns: [
+      /avoid(?:\s+the\s+use\s+of)?\s+(?:the\s+)?second[-\s]person/i,
+      /(?:do\s*n[o']?t|don't|never)\s+address\s+the\s+reader/i,
+      /avoid\s+(?:using\s+)?["“']?you["”']?/i,
+      /no\s+second[-\s]person/i,
+    ],
+  },
+  {
+    key: 'formalRegister',
+    label: 'Formal academic register',
+    rule: 'informal',
+    patterns: [
+      /formal\s+(?:academic\s+)?(?:tone|register|style|language|writing)/i,
+      /academic\s+(?:tone|register|style)/i,
+      /avoid\s+(?:colloquial|informal|conversational|casual)/i,
+      /avoid\s+slang/i,
+      /scholarly\s+(?:tone|register|style)/i,
+    ],
+  },
+  {
+    key: 'noBulletPoints',
+    label: 'Continuous prose, no bullet points',
+    rule: 'bullets',
+    patterns: [
+      /avoid\s+bullet\s*points?/i,
+      /no\s+bullet\s*points?/i,
+      /continuous\s+prose/i,
+      /(?:do\s*n[o']?t|don't)\s+use\s+(?:bullet\s*points?|lists)/i,
+    ],
+  },
+];
+
+const CITATION_STYLES = [
+  { name: 'APA', re: /\bAPA\b\s*(\d+(?:th)?)?/i },
+  { name: 'Harvard', re: /\bHarvard\b/i },
+  { name: 'MLA', re: /\bMLA\b/i },
+  { name: 'Chicago', re: /\bChicago\b/i },
+  { name: 'Vancouver', re: /\bVancouver\b/i },
+  { name: 'IEEE', re: /\bIEEE\b/i },
+  { name: 'OSCOLA', re: /\bOSCOLA\b/i },
+];
+
+const SECTION_NAMES = [
+  'abstract', 'introduction', 'background', 'literature review', 'method',
+  'methods', 'methodology', 'participants', 'materials', 'procedure',
+  'results', 'findings', 'analysis', 'discussion', 'conclusion',
+  'recommendations', 'references', 'reference list', 'bibliography',
+  'appendix', 'appendices', 'executive summary',
+];
+
+/** Lines that read as a criterion: bullets, numbers, or a "marks" allocation. */
+function findCriteria(text) {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 12 && line.length < 300)
+    .filter((line) => /^(?:[-*•▪]|\d+[.)]|\(\w\))\s/.test(line) || /\(\s*\d+\s*(?:marks?|points?|%)\s*\)/i.test(line))
+    .map((line) => line.replace(/^(?:[-*•▪]|\d+[.)]|\(\w\))\s*/, ''))
+    .slice(0, 25);
+}
+
+/**
+ * Concepts the guide leans on: uncommon words it uses more than once, or that
+ * appear inside a criterion. These become a coverage check against the draft.
+ */
+function findKeyTerms(text, criteria) {
+  const criteriaText = criteria.join(' ').toLowerCase();
+  const counts = new Map();
+  const words = text.match(/[A-Za-z][A-Za-z-]{3,}/g) || [];
+
+  for (const raw of words) {
+    const word = raw.toLowerCase();
+    if (isCommonWord(word)) continue;
+    if (SECTION_NAMES.includes(word)) continue;
+    if (RUBRIC_JARGON.has(word)) continue;
+    counts.set(word, (counts.get(word) || 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .filter(([word, n]) => n >= 2 || criteriaText.includes(word))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)
+    .map(([word]) => word);
+}
+
+// Words a rubric uses to talk about marking rather than about the subject.
+const RUBRIC_JARGON = new Set([
+  'rubric', 'criteria', 'criterion', 'marks', 'marking', 'grade', 'grades',
+  'grading', 'assessment', 'assessed', 'submission', 'submit', 'deadline',
+  'weighting', 'excellent', 'satisfactory', 'unsatisfactory', 'distinction',
+  'credit', 'fail', 'pass', 'demonstrates', 'demonstrate', 'demonstrated',
+  'evidences', 'articulates', 'coherent', 'coherence', 'cohesion', 'clarity',
+  'accurate', 'accurately', 'appropriate', 'appropriately', 'relevant',
+  'relevance', 'thorough', 'thoroughly', 'critically', 'critical', 'analysis',
+  'analyse', 'analyze', 'evaluate', 'evaluation', 'synthesis', 'synthesise',
+  'referencing', 'citation', 'citations', 'cited', 'sources', 'formatting',
+  'structure', 'structured', 'argument', 'arguments', 'assignment', 'essay',
+  'report', 'student', 'students', 'learning', 'outcomes', 'understanding',
+  'knowledge', 'application', 'applied', 'concepts', 'concept', 'theory',
+  'theories', 'theoretical', 'discussion', 'conclusion', 'introduction',
+  'paragraph', 'paragraphs', 'sentence', 'sentences', 'words', 'word',
+  // Instruction verbs: a guide says "identifies X accurately", and the concept
+  // is X, not "identifies".
+  'avoid', 'avoids', 'applies', 'apply', 'applied', 'identifies', 'identify',
+  'identified', 'evaluates', 'evaluated', 'describes', 'describe', 'described',
+  'discusses', 'discuss', 'discussed', 'explains', 'explain', 'explained',
+  'outlines', 'outline', 'outlined', 'compares', 'compare', 'compared',
+  'contrasts', 'contrast', 'considers', 'consider', 'considered', 'examines',
+  'examine', 'examined', 'includes', 'include', 'included', 'provides',
+  'provide', 'provided', 'refers', 'refer', 'referred', 'shows', 'states',
+  'presents', 'present', 'addresses', 'reflects', 'reflect', 'links', 'link',
+  'integrates', 'integrate', 'justifies', 'justify', 'supports', 'argues',
+  'argue', 'defines', 'define', 'explores', 'explore', 'summarises',
+  'summarizes', 'interprets', 'interpret', 'uses', 'using', 'used', 'makes',
+  'ensure', 'ensures', 'should', 'must', 'throughout', 'clearly', 'accurately',
+  'edition', 'limit', 'guide', 'peer-reviewed', 'reviewed',
+]);
+
+/**
+ * Reads a marking guide.
+ * @param {string} text the guide's plain text
+ */
+function parseRubric(text) {
+  const clean = String(text || '');
+  if (!clean.trim()) return null;
+
+  const criteria = findCriteria(clean);
+  const constraints = {};
+  const applied = [];
+
+  for (const rule of STYLE_RULES) {
+    const hit = rule.patterns.find((re) => re.test(clean));
+    if (!hit) continue;
+    constraints[rule.key] = true;
+    applied.push({ key: rule.key, label: rule.label, rule: rule.rule, evidence: excerptFor(clean, hit) });
+  }
+
+  // A formal register implies the two it does not always spell out.
+  if (constraints.formalRegister) {
+    constraints.noContractions = true;
+    constraints.noSecondPerson = true;
+  }
+
+  const citation = CITATION_STYLES.find((s) => s.re.test(clean));
+  const sources = clean.match(/at least\s*(\d+)\s*(?:peer[-\s]reviewed\s*)?(?:sources|references|articles|journal)/i)
+    || clean.match(/minimum(?: of)?\s*(\d+)\s*(?:peer[-\s]reviewed\s*)?(?:sources|references|articles)/i);
+
+  const lower = clean.toLowerCase();
+  const sections = SECTION_NAMES.filter((name) => {
+    const re = new RegExp(`(?:^|[\\n\\s(,;:])${name.replace(/ /g, '\\s+')}(?:[\\s):,;.]|$)`, 'i');
+    return re.test(lower);
+  });
+
+  return {
+    wordLimit: findWordLimit(clean),
+    constraints,
+    appliedConstraints: applied,
+    citationStyle: citation ? citation.name : null,
+    minSources: sources ? Number(sources[1]) : null,
+    sections,
+    keyTerms: findKeyTerms(clean, criteria),
+    criteria,
+    length: clean.length,
+  };
+}
+
+function excerptFor(text, re) {
+  const m = text.match(re);
+  if (!m) return null;
+  const start = Math.max(0, m.index - 30);
+  const end = Math.min(text.length, m.index + m[0].length + 30);
+  return `…${text.slice(start, end).replace(/\s+/g, ' ').trim()}…`;
+}
+
+/**
+ * Checks a draft against a parsed guide. Every check here is countable; nothing
+ * pretends to judge the writing's quality.
+ *
+ * @returns {Array<{label:string, status:'pass'|'warn'|'fail'|'info', detail:string}>}
+ */
+function checkAgainstRubric(draft, rubric) {
+  if (!rubric) return [];
+  const text = String(draft || '');
+  const words = (text.match(/[A-Za-z][A-Za-z'’-]*/g) || []).length;
+  const lower = text.toLowerCase();
+  const checks = [];
+
+  // --- word count ---
+  const limit = rubric.wordLimit;
+  if (limit) {
+    const { min, max, target, tolerance } = limit;
+    const stated = target
+      ? `${target.toLocaleString()}${tolerance ? ` ±${tolerance}%` : ''}`
+      : [min && `min ${min.toLocaleString()}`, max && `max ${max.toLocaleString()}`].filter(Boolean).join(', ');
+    let status = 'pass';
+    let detail = `${words.toLocaleString()} words against ${stated}.`;
+    if (max && words > max) {
+      status = 'fail';
+      detail = `${words.toLocaleString()} words is ${(words - max).toLocaleString()} over the ${max.toLocaleString()} limit.`;
+    } else if (min && words < min) {
+      status = 'fail';
+      detail = `${words.toLocaleString()} words is ${(min - words).toLocaleString()} short of ${min.toLocaleString()}.`;
+    } else if (target && !min && !max) {
+      const drift = Math.abs(words - target) / target;
+      status = drift > 0.1 ? 'warn' : 'pass';
+      detail = `${words.toLocaleString()} words against a target of ${target.toLocaleString()}.`;
+    }
+    checks.push({ label: 'Word count', status, detail });
+  }
+
+  // --- style constraints the guide imposes ---
+  if (rubric.constraints.noContractions) {
+    const found = text.match(CONTRACTION_RE) || [];
+    checks.push({
+      label: 'No contractions',
+      status: found.length ? 'fail' : 'pass',
+      detail: found.length
+        ? `${found.length} found: ${[...new Set(found)].slice(0, 5).join(', ')}.`
+        : 'None found.',
+    });
+  }
+
+  if (rubric.constraints.noFirstPerson) {
+    // Case-insensitive, or a sentence opening with "We" slips past. "US" in
+    // capitals is the country, not the pronoun, so it is dropped again.
+    const found = (text.match(/\b(?:I|I['’](?:m|ve|ll|d)|me|my|mine|myself|we|we['’](?:re|ve|ll|d)|us|our|ours|ourselves)\b/gi) || [])
+      .filter((word) => word !== 'US');
+    checks.push({
+      label: 'Third person only',
+      status: found.length ? 'fail' : 'pass',
+      detail: found.length
+        ? `${found.length} first-person word${found.length === 1 ? '' : 's'}: ${[...new Set(found)].slice(0, 5).join(', ')}.`
+        : 'None found.',
+    });
+  }
+
+  if (rubric.constraints.noSecondPerson) {
+    const found = text.match(/\b(?:you|your|yours|you're|you've)\b/gi) || [];
+    checks.push({
+      label: 'Does not address the reader',
+      status: found.length ? 'fail' : 'pass',
+      detail: found.length ? `${found.length} use${found.length === 1 ? '' : 's'} of "you".` : 'None found.',
+    });
+  }
+
+  if (rubric.constraints.noBulletPoints) {
+    const bullets = (text.match(/^\s*(?:[-*•▪]|\d+[.)])\s+/gm) || []).length;
+    checks.push({
+      label: 'Continuous prose',
+      status: bullets ? 'fail' : 'pass',
+      detail: bullets ? `${bullets} list item${bullets === 1 ? '' : 's'} found.` : 'No lists found.',
+    });
+  }
+
+  // --- references ---
+  if (rubric.minSources) {
+    // Author-date citations, e.g. (Baker et al., 2021) or (Kariou & Lee, 2019).
+    const citations = text.match(/\([^)]*\b(?:19|20)\d{2}[a-z]?\b[^)]*\)/g) || [];
+    const distinct = new Set(citations.map((c) => c.replace(/\s+/g, ' ').toLowerCase()));
+    checks.push({
+      label: `At least ${rubric.minSources} sources`,
+      status: distinct.size >= rubric.minSources ? 'pass' : 'warn',
+      detail: `${distinct.size} distinct in-text citation${distinct.size === 1 ? '' : 's'} found. Counted from the text, so a reference list is not included.`,
+    });
+  }
+
+  if (rubric.citationStyle) {
+    checks.push({
+      label: `${rubric.citationStyle} referencing`,
+      status: 'info',
+      detail: 'The guide names this style. Formatting is not something this app can verify.',
+    });
+  }
+
+  // --- required sections ---
+  if (rubric.sections.length >= 2) {
+    const missing = rubric.sections.filter((name) => !lower.includes(name));
+    checks.push({
+      label: 'Sections named in the guide',
+      status: missing.length === 0 ? 'pass' : 'warn',
+      detail: missing.length === 0
+        ? `All ${rubric.sections.length} appear: ${rubric.sections.join(', ')}.`
+        : `Not mentioned: ${missing.join(', ')}.`,
+    });
+  }
+
+  // --- concept coverage ---
+  if (rubric.keyTerms.length) {
+    const missing = rubric.keyTerms.filter((term) => !lower.includes(term));
+    const covered = rubric.keyTerms.length - missing.length;
+    checks.push({
+      label: 'Concepts the guide emphasises',
+      status: missing.length === 0 ? 'pass' : missing.length > rubric.keyTerms.length / 2 ? 'warn' : 'info',
+      detail: missing.length === 0
+        ? `All ${covered} appear in the draft.`
+        : `${covered} of ${rubric.keyTerms.length} appear. Not mentioned: ${missing.join(', ')}.`,
+    });
+  }
+
+  if (rubric.criteria.length) {
+    checks.push({
+      label: `${rubric.criteria.length} criteria read from the guide`,
+      status: 'info',
+      detail: 'Whether the writing meets them is a marker\'s judgement, not something counting can settle.',
+    });
+  }
+
+  return checks;
+}
+
+return { parseRubric, checkAgainstRubric };
+})();
+
+// ---- lib/docx.js ----
+const NS_docx = (() => {
+// Reading a .docx without a library.
+//
+// A .docx is a zip holding word/document.xml. Browsers can inflate raw deflate
+// streams through DecompressionStream, so the whole job is walking the zip's
+// central directory by hand and stripping the XML. That keeps the single-file
+// build dependency-free and working offline, which pulling in a parser would
+// not.
+//
+// Handles the two storage methods Word actually writes: deflate and stored.
+// Anything else — encrypted, zip64, .doc, .pages — reports itself rather than
+// returning nonsense.
+
+const EOCD_SIGNATURE = 0x06054b50;
+const CENTRAL_SIGNATURE = 0x02014b50;
+const LOCAL_SIGNATURE = 0x04034b50;
+
+function findEndOfCentralDirectory(view) {
+  // The record is at the end, after a comment of up to 65535 bytes.
+  const earliest = Math.max(0, view.byteLength - 65557);
+  for (let i = view.byteLength - 22; i >= earliest; i -= 1) {
+    if (view.getUint32(i, true) === EOCD_SIGNATURE) return i;
+  }
+  return -1;
+}
+
+/** Locates one file in the zip and returns its raw bytes plus how it is stored. */
+function locateEntry(buffer, wantedName) {
+  const view = new DataView(buffer);
+  const eocd = findEndOfCentralDirectory(view);
+  if (eocd < 0) throw fail('That file is not a zip archive, so it is not a .docx either.');
+
+  const entryCount = view.getUint16(eocd + 10, true);
+  let offset = view.getUint32(eocd + 16, true);
+  const decoder = new TextDecoder();
+
+  for (let i = 0; i < entryCount; i += 1) {
+    if (offset + 46 > view.byteLength || view.getUint32(offset, true) !== CENTRAL_SIGNATURE) break;
+
+    const method = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const nameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localOffset = view.getUint32(offset + 42, true);
+    const name = decoder.decode(new Uint8Array(buffer, offset + 46, nameLength));
+
+    if (name === wantedName) {
+      if (view.getUint32(localOffset, true) !== LOCAL_SIGNATURE) {
+        throw fail('That .docx looks damaged: its internal index does not line up.');
+      }
+      const localNameLength = view.getUint16(localOffset + 26, true);
+      const localExtraLength = view.getUint16(localOffset + 28, true);
+      const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+      return { bytes: new Uint8Array(buffer, dataStart, compressedSize), method };
+    }
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return null;
+}
+
+async function inflateRaw(bytes) {
+  if (typeof DecompressionStream === 'undefined') {
+    throw fail('This browser cannot unzip files. Copy the text out of the guide and paste it instead.');
+  }
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+const XML_ENTITIES = {
+  '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'",
+};
+
+/** Turns WordprocessingML into plain text, keeping paragraph and list breaks. */
+function documentXmlToText(xml) {
+  let out = xml
+    // Drop anything that is not body text: tracked deletions, field
+    // instructions, footnote and comment bodies.
+    .replace(/<w:delText[\s\S]*?<\/w:delText>/g, '')
+    .replace(/<w:instrText[\s\S]*?<\/w:instrText>/g, '')
+    // Structure worth keeping.
+    .replace(/<w:tab\b[^>]*\/?>/g, '\t')
+    .replace(/<w:br\b[^>]*\/?>/g, '\n')
+    .replace(/<\/w:p>/g, '\n')
+    .replace(/<\/w:tr>/g, '\n')
+    .replace(/<\/w:tc>/g, '\t');
+
+  // Only the runs of literal text survive.
+  const pieces = [];
+  const re = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|\n|\t/g;
+  let m;
+  while ((m = re.exec(out)) !== null) {
+    pieces.push(m[1] !== undefined ? m[1] : m[0]);
+  }
+
+  return pieces
+    .join('')
+    .replace(/&#(\d+);/g, (whole, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (whole, code) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&(?:amp|lt|gt|quot|apos);/g, (entity) => XML_ENTITIES[entity])
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * Extracts the text of a .docx.
+ * @param {ArrayBuffer} buffer
+ * @returns {Promise<string>}
+ */
+async function extractDocxText(buffer) {
+  const entry = locateEntry(buffer, 'word/document.xml');
+  if (!entry) {
+    throw fail('No document text found inside that file. If it is a .doc or .pages file, save it as .docx first.');
+  }
+
+  let xmlBytes;
+  if (entry.method === 0) {
+    xmlBytes = entry.bytes;            // stored, no compression
+  } else if (entry.method === 8) {
+    xmlBytes = await inflateRaw(entry.bytes); // deflate, what Word writes
+  } else {
+    throw fail(`That .docx uses an unsupported compression method (${entry.method}).`);
+  }
+
+  const text = documentXmlToText(new TextDecoder().decode(xmlBytes));
+  if (!text) throw fail('That .docx appears to contain no text.');
+  return text;
+}
+
+function fail(message) {
+  const error = new Error(message);
+  error.code = 'DOCX';
+  return error;
+}
+
+return { documentXmlToText, extractDocxText };
 })();
 
 
@@ -2535,18 +3284,21 @@ return { PROFILES, humanise };
 // the rules engine instead of talking to a server.
 window.HUMANISER_OFFLINE = {
   build: 'standalone',
-  analyze: (text) => NS_analyze.analyze(text),
-  humanise(text, strength) {
-    const result = NS_rules.humanise(text, { strength });
+  analyze: (text, constraints) => NS_analyze.analyze(text, { constraints }),
+  humanise(text, strength, constraints) {
+    const result = NS_rules.humanise(text, { strength, constraints });
     return {
       text: result.text,
       changes: result.changes,
       byRule: result.byRule,
       profile: result.profile,
-      before: NS_analyze.analyze(text),
-      after: NS_analyze.analyze(result.text),
+      before: NS_analyze.analyze(text, { constraints }),
+      after: NS_analyze.analyze(result.text, { constraints }),
     };
   },
+  parseRubric: (text) => NS_rubric.parseRubric(text),
+  checkRubric: (draft, rubric) => NS_rubric.checkAgainstRubric(draft, rubric),
+  extractDocxText: (buffer) => NS_docx.extractDocxText(buffer),
   profiles: Object.entries(NS_rules.PROFILES).map(([id, p]) => ({
     id, label: p.label, description: p.description,
   })),
@@ -2592,6 +3344,20 @@ const ui = {
   copy: el('copy'),
   use: el('use'),
   sample: el('sample'),
+  guide: el('guide'),
+  guideToggle: el('guide-toggle'),
+  guideBody: el('guide-body'),
+  guideText: el('guide-text'),
+  guideFile: el('guide-file'),
+  guidePick: el('guide-pick'),
+  guideRead: el('guide-read'),
+  guideClear: el('guide-clear'),
+  guideStatus: el('guide-status'),
+  guideSummary: el('guide-summary'),
+  guideSub: el('guide-sub'),
+  dropzone: el('dropzone'),
+  rubricCard: el('rubric-card'),
+  rubricChecks: el('rubric-checks'),
   clear: el('clear'),
   analyse: el('analyse'),
 };
@@ -2603,7 +3369,20 @@ const state = {
   outputText: '',
   status: null,
   busy: false,
+  rubric: null,       // the parsed guide
+  rubricText: '',     // its raw text, which Claude mode sends verbatim
 };
+
+// The house rules a guide can switch off, and what to call them on screen.
+const OVERRIDE_LABELS = {
+  noContractions: 'contractions are left expanded, and existing ones written out',
+  noFirstPerson: 'no passive is flipped into "I" or "we"',
+  noSecondPerson: 'no longer asks the writing to address the reader as "you"',
+  formalRegister: 'idiom, humour and conversational asides are not suggested',
+  noBulletPoints: 'no lists are introduced',
+};
+
+const constraintsNow = () => (state.rubric && state.rubric.constraints) || {};
 
 const SAMPLE = `It is important to note that the utilization of data-driven methodologies was demonstrated by our team to be highly effective. In today's fast-paced world, organizations are required to leverage numerous analytical frameworks in order to ascertain optimal outcomes. Furthermore, the implementation of these paradigms facilitates the creation of significant value for stakeholders across the entire organization, and it is anticipated that additional benefits will be obtained subsequently.
 
@@ -2647,19 +3426,68 @@ async function postJson(path, body) {
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
 
 async function getReport(text) {
+  const constraints = constraintsNow();
   if (offline) {
     await nextFrame();
-    return offline.analyze(text);
+    return offline.analyze(text, constraints);
   }
-  return (await postJson('/api/analyze', { text })).report;
+  return (await postJson('/api/analyze', { text, constraints })).report;
 }
 
 async function getRewrite(text, strength) {
+  const constraints = constraintsNow();
   if (offline) {
     await nextFrame();
-    return offline.humanise(text, strength);
+    return offline.humanise(text, strength, constraints);
   }
-  return postJson('/api/humanise', { text, strength });
+  return postJson('/api/humanise', { text, strength, constraints });
+}
+
+/**
+ * Reads a marking guide, from pasted text or a file. Offline the parsing
+ * happens in the page; with a server it happens there, because a .docx has to
+ * be unzipped either way and one implementation is enough.
+ */
+async function readGuide({ text, file }) {
+  if (file) {
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.pdf')) {
+      throw new Error('PDF text needs a parser this page deliberately does not carry. Open the PDF, select all, copy, and paste it below.');
+    }
+    if (/\.(doc|pages|odt)$/.test(name)) {
+      throw new Error(`${name.match(/\.\w+$/)[0]} cannot be read here. Save it as .docx, or paste the text below.`);
+    }
+    if (file.size > 12_000_000) throw new Error('That file is too large.');
+
+    if (name.endsWith('.docx')) {
+      const buffer = await file.arrayBuffer();
+      if (offline) {
+        const extracted = await offline.extractDocxText(buffer);
+        return { rubric: offline.parseRubric(extracted), text: extracted };
+      }
+      return postJson('/api/rubric', { docxBase64: bytesToBase64(new Uint8Array(buffer)) });
+    }
+    const asText = await file.text();
+    return offline
+      ? { rubric: offline.parseRubric(asText), text: asText }
+      : postJson('/api/rubric', { text: asText });
+  }
+
+  if (!text.trim()) throw new Error('Paste the guide, or drop the file in.');
+  return offline
+    ? { rubric: offline.parseRubric(text), text }
+    : postJson('/api/rubric', { text });
+}
+
+function bytesToBase64(bytes) {
+  // Chunked, because spreading a megabyte into String.fromCharCode overflows
+  // the argument limit.
+  let binary = '';
+  const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+  }
+  return btoa(binary);
 }
 
 async function loadStatus() {
@@ -2739,6 +3567,7 @@ function renderDashboard(report, baseline) {
   renderRhythm(report);
   renderIssues(report);
   renderChanges(state.changes);
+  renderRubricChecks(state.outputText || ui.input.value);
 }
 
 function renderFacts(report) {
@@ -2763,16 +3592,18 @@ function renderSubscores(report, baseline) {
     const value = report.subscores[key] ?? 0;
     const was = baseline && baseline !== report ? baseline.subscores[key] : null;
 
+    const scored = !report.scoredQualities || report.scoredQualities.includes(key);
     const row = document.createElement('div');
-    row.className = 'sub';
+    row.className = scored ? 'sub' : 'sub muted';
     row.innerHTML = `
       <span class="sub-name">${label}</span>
       <span class="sub-track"><span class="sub-bar" style="width:${value}%"></span></span>
       <span class="sub-value">${value}</span>`;
 
-    const tip = was == null
+    let tip = was == null
       ? `${label}: ${value} of 100. ${SUBSCORE_HELP[key]}`
-      : `${label}: ${was} → ${value}. ${SUBSCORE_HELP[key]}`;
+      : `${label}: ${was} \u2192 ${value}. ${SUBSCORE_HELP[key]}`;
+    if (!scored) tip += ' Left out of the headline score: the marking guide forbids what it measures.';
     attachTooltip(row, tip);
     ui.subscores.appendChild(row);
   }
@@ -2899,6 +3730,72 @@ function renderChanges(changes) {
     </div>`).join('');
 }
 
+/** Shows what was read out of the guide, and which house rules it switched off. */
+function renderGuideSummary() {
+  const rubric = state.rubric;
+  if (!rubric) {
+    ui.guideSummary.hidden = true;
+    ui.guideSummary.innerHTML = '';
+    ui.guideSub.textContent = "Give it your rubric and it follows the rubric's rules instead of its own where the two disagree.";
+    return;
+  }
+
+  const chips = [];
+  const limit = rubric.wordLimit;
+  if (limit) {
+    const stated = limit.target
+      ? `${limit.target.toLocaleString()}${limit.tolerance ? ` \u00b1${limit.tolerance}%` : ''}`
+      : [limit.min && `min ${limit.min.toLocaleString()}`, limit.max && `max ${limit.max.toLocaleString()}`].filter(Boolean).join(' \u00b7 ');
+    chips.push(`Word limit <strong>${escape(stated)}</strong>`);
+  }
+  if (rubric.citationStyle) chips.push(`Referencing <strong>${escape(rubric.citationStyle)}</strong>`);
+  if (rubric.minSources) chips.push(`Sources <strong>${rubric.minSources}+</strong>`);
+  if (rubric.criteria.length) chips.push(`<strong>${rubric.criteria.length}</strong> criteria`);
+  if (rubric.sections.length >= 2) chips.push(`<strong>${rubric.sections.length}</strong> sections named`);
+
+  const overrides = Object.keys(rubric.constraints)
+    .filter((key) => OVERRIDE_LABELS[key])
+    .map((key) => `<li>${escape(OVERRIDE_LABELS[key])}</li>`);
+
+  ui.guideSummary.innerHTML = `
+    ${chips.length ? `<p class="chips">${chips.map((c) => `<span class="chip">${c}</span>`).join('')}</p>` : ''}
+    ${overrides.length
+      ? `<p class="card-label">House rules this guide switches off</p><ul class="overrides">${overrides.join('')}</ul>`
+      : '<p class="overrides">Nothing in this guide conflicts with the house style, so all of it stays on.</p>'}
+    ${rubric.keyTerms.length
+      ? `<p class="guide-terms">Concepts it keeps naming: ${escape(rubric.keyTerms.join(', '))}.</p>`
+      : ''}`;
+  ui.guideSummary.hidden = false;
+
+  const count = Object.keys(rubric.constraints).length;
+  ui.guideSub.textContent = count
+    ? `Guide loaded. ${count} house rule${count === 1 ? '' : 's'} switched off to match it.`
+    : 'Guide loaded.';
+}
+
+const CHECK_MARKS = { pass: '\u2713', fail: '\u2715', warn: '!', info: 'i' };
+
+function renderRubricChecks(draft) {
+  if (!state.rubric || !draft) {
+    ui.rubricCard.hidden = true;
+    return;
+  }
+  const checks = offline ? offline.checkRubric(draft, state.rubric) : state.rubricChecks || [];
+  if (!checks.length) {
+    ui.rubricCard.hidden = true;
+    return;
+  }
+  ui.rubricChecks.innerHTML = checks.map((c) => `
+    <div class="check ${c.status}">
+      <span class="check-mark" aria-hidden="true">${CHECK_MARKS[c.status] || 'i'}</span>
+      <span>
+        <p class="check-label">${escape(c.label)} <span class="sev ${c.status === 'fail' ? 'high' : c.status === 'warn' ? 'medium' : 'low'}">${c.status}</span></p>
+        <p class="check-detail">${escape(c.detail)}</p>
+      </span>
+    </div>`).join('');
+  ui.rubricCard.hidden = false;
+}
+
 // ---------- helpers ----------
 
 function escape(text) {
@@ -2981,6 +3878,7 @@ async function runClaude(text) {
       text,
       strength: ui.strength.value,
       effort: ui.effort.value,
+      rubricText: state.rubricText,
     }),
   });
   if (!res.ok || !res.body) {
@@ -3020,6 +3918,7 @@ async function runClaude(text) {
         ui.outCount.textContent = `${wordCount(rewritten).toLocaleString()} words`;
       } else if (event.type === 'done') {
         showOutput(rewritten.trim());
+        state.rubricChecks = event.rubricChecks || [];
         renderDashboard(event.report, state.baseline);
         const bits = [`${event.usage.output.toLocaleString()} tokens out`];
         if (event.usage.cacheRead) bits.push(`${event.usage.cacheRead.toLocaleString()} cached`);
@@ -3135,6 +4034,81 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault();
     if (!state.busy) run();
   }
+});
+
+function setGuideStatus(message, kind = '') {
+  ui.guideStatus.textContent = message || '';
+  ui.guideStatus.className = `guide-status ${kind}`;
+}
+
+async function loadGuide(source) {
+  setGuideStatus('Reading…');
+  try {
+    const { rubric, text } = await readGuide(source);
+    if (!rubric) throw new Error('Nothing readable in that guide.');
+    state.rubric = rubric;
+    state.rubricText = text;
+    state.baseline = null;               // constraints change the score
+    if (source.file) ui.guideText.value = text;
+    renderGuideSummary();
+    setGuideStatus('Guide applied. Run it again to see the difference.', 'ok');
+    if (state.current) renderDashboard(state.current, null);
+  } catch (error) {
+    setGuideStatus(error.message, 'error');
+  }
+}
+
+ui.guideToggle.addEventListener('click', () => {
+  const open = ui.guideBody.hidden;
+  ui.guideBody.hidden = !open;
+  ui.guideToggle.setAttribute('aria-expanded', String(open));
+  ui.guideToggle.textContent = open ? 'Hide' : 'Add a guide';
+});
+
+ui.guidePick.addEventListener('click', () => ui.guideFile.click());
+ui.guideFile.addEventListener('change', () => {
+  const file = ui.guideFile.files && ui.guideFile.files[0];
+  if (file) loadGuide({ file });
+});
+
+ui.guideRead.addEventListener('click', () => loadGuide({ text: ui.guideText.value }));
+
+ui.guideClear.addEventListener('click', () => {
+  state.rubric = null;
+  state.rubricText = '';
+  state.rubricChecks = [];
+  state.baseline = null;
+  ui.guideText.value = '';
+  ui.guideFile.value = '';
+  ui.rubricCard.hidden = true;
+  renderGuideSummary();
+  setGuideStatus('Guide removed. Back to the house style.');
+  if (state.current) renderDashboard(state.current, null);
+});
+
+for (const event of ['dragenter', 'dragover']) {
+  ui.dropzone.addEventListener(event, (e) => {
+    e.preventDefault();
+    ui.dropzone.classList.add('over');
+  });
+}
+for (const event of ['dragleave', 'drop']) {
+  ui.dropzone.addEventListener(event, () => ui.dropzone.classList.remove('over'));
+}
+ui.dropzone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file) loadGuide({ file });
+});
+
+// Dropping anywhere on the panel works too, which is what people try first.
+ui.guide.addEventListener('dragover', (e) => e.preventDefault());
+ui.guide.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!file) return;
+  if (ui.guideBody.hidden) ui.guideToggle.click();
+  loadGuide({ file });
 });
 
 loadStatus();

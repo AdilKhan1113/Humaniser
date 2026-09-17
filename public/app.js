@@ -38,6 +38,20 @@ const ui = {
   copy: el('copy'),
   use: el('use'),
   sample: el('sample'),
+  guide: el('guide'),
+  guideToggle: el('guide-toggle'),
+  guideBody: el('guide-body'),
+  guideText: el('guide-text'),
+  guideFile: el('guide-file'),
+  guidePick: el('guide-pick'),
+  guideRead: el('guide-read'),
+  guideClear: el('guide-clear'),
+  guideStatus: el('guide-status'),
+  guideSummary: el('guide-summary'),
+  guideSub: el('guide-sub'),
+  dropzone: el('dropzone'),
+  rubricCard: el('rubric-card'),
+  rubricChecks: el('rubric-checks'),
   clear: el('clear'),
   analyse: el('analyse'),
 };
@@ -49,7 +63,20 @@ const state = {
   outputText: '',
   status: null,
   busy: false,
+  rubric: null,       // the parsed guide
+  rubricText: '',     // its raw text, which Claude mode sends verbatim
 };
+
+// The house rules a guide can switch off, and what to call them on screen.
+const OVERRIDE_LABELS = {
+  noContractions: 'contractions are left expanded, and existing ones written out',
+  noFirstPerson: 'no passive is flipped into "I" or "we"',
+  noSecondPerson: 'no longer asks the writing to address the reader as "you"',
+  formalRegister: 'idiom, humour and conversational asides are not suggested',
+  noBulletPoints: 'no lists are introduced',
+};
+
+const constraintsNow = () => (state.rubric && state.rubric.constraints) || {};
 
 const SAMPLE = `It is important to note that the utilization of data-driven methodologies was demonstrated by our team to be highly effective. In today's fast-paced world, organizations are required to leverage numerous analytical frameworks in order to ascertain optimal outcomes. Furthermore, the implementation of these paradigms facilitates the creation of significant value for stakeholders across the entire organization, and it is anticipated that additional benefits will be obtained subsequently.
 
@@ -93,19 +120,68 @@ async function postJson(path, body) {
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
 
 async function getReport(text) {
+  const constraints = constraintsNow();
   if (offline) {
     await nextFrame();
-    return offline.analyze(text);
+    return offline.analyze(text, constraints);
   }
-  return (await postJson('/api/analyze', { text })).report;
+  return (await postJson('/api/analyze', { text, constraints })).report;
 }
 
 async function getRewrite(text, strength) {
+  const constraints = constraintsNow();
   if (offline) {
     await nextFrame();
-    return offline.humanise(text, strength);
+    return offline.humanise(text, strength, constraints);
   }
-  return postJson('/api/humanise', { text, strength });
+  return postJson('/api/humanise', { text, strength, constraints });
+}
+
+/**
+ * Reads a marking guide, from pasted text or a file. Offline the parsing
+ * happens in the page; with a server it happens there, because a .docx has to
+ * be unzipped either way and one implementation is enough.
+ */
+async function readGuide({ text, file }) {
+  if (file) {
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.pdf')) {
+      throw new Error('PDF text needs a parser this page deliberately does not carry. Open the PDF, select all, copy, and paste it below.');
+    }
+    if (/\.(doc|pages|odt)$/.test(name)) {
+      throw new Error(`${name.match(/\.\w+$/)[0]} cannot be read here. Save it as .docx, or paste the text below.`);
+    }
+    if (file.size > 12_000_000) throw new Error('That file is too large.');
+
+    if (name.endsWith('.docx')) {
+      const buffer = await file.arrayBuffer();
+      if (offline) {
+        const extracted = await offline.extractDocxText(buffer);
+        return { rubric: offline.parseRubric(extracted), text: extracted };
+      }
+      return postJson('/api/rubric', { docxBase64: bytesToBase64(new Uint8Array(buffer)) });
+    }
+    const asText = await file.text();
+    return offline
+      ? { rubric: offline.parseRubric(asText), text: asText }
+      : postJson('/api/rubric', { text: asText });
+  }
+
+  if (!text.trim()) throw new Error('Paste the guide, or drop the file in.');
+  return offline
+    ? { rubric: offline.parseRubric(text), text }
+    : postJson('/api/rubric', { text });
+}
+
+function bytesToBase64(bytes) {
+  // Chunked, because spreading a megabyte into String.fromCharCode overflows
+  // the argument limit.
+  let binary = '';
+  const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+  }
+  return btoa(binary);
 }
 
 async function loadStatus() {
@@ -185,6 +261,7 @@ function renderDashboard(report, baseline) {
   renderRhythm(report);
   renderIssues(report);
   renderChanges(state.changes);
+  renderRubricChecks(state.outputText || ui.input.value);
 }
 
 function renderFacts(report) {
@@ -209,16 +286,18 @@ function renderSubscores(report, baseline) {
     const value = report.subscores[key] ?? 0;
     const was = baseline && baseline !== report ? baseline.subscores[key] : null;
 
+    const scored = !report.scoredQualities || report.scoredQualities.includes(key);
     const row = document.createElement('div');
-    row.className = 'sub';
+    row.className = scored ? 'sub' : 'sub muted';
     row.innerHTML = `
       <span class="sub-name">${label}</span>
       <span class="sub-track"><span class="sub-bar" style="width:${value}%"></span></span>
       <span class="sub-value">${value}</span>`;
 
-    const tip = was == null
+    let tip = was == null
       ? `${label}: ${value} of 100. ${SUBSCORE_HELP[key]}`
-      : `${label}: ${was} → ${value}. ${SUBSCORE_HELP[key]}`;
+      : `${label}: ${was} \u2192 ${value}. ${SUBSCORE_HELP[key]}`;
+    if (!scored) tip += ' Left out of the headline score: the marking guide forbids what it measures.';
     attachTooltip(row, tip);
     ui.subscores.appendChild(row);
   }
@@ -345,6 +424,72 @@ function renderChanges(changes) {
     </div>`).join('');
 }
 
+/** Shows what was read out of the guide, and which house rules it switched off. */
+function renderGuideSummary() {
+  const rubric = state.rubric;
+  if (!rubric) {
+    ui.guideSummary.hidden = true;
+    ui.guideSummary.innerHTML = '';
+    ui.guideSub.textContent = "Give it your rubric and it follows the rubric's rules instead of its own where the two disagree.";
+    return;
+  }
+
+  const chips = [];
+  const limit = rubric.wordLimit;
+  if (limit) {
+    const stated = limit.target
+      ? `${limit.target.toLocaleString()}${limit.tolerance ? ` \u00b1${limit.tolerance}%` : ''}`
+      : [limit.min && `min ${limit.min.toLocaleString()}`, limit.max && `max ${limit.max.toLocaleString()}`].filter(Boolean).join(' \u00b7 ');
+    chips.push(`Word limit <strong>${escape(stated)}</strong>`);
+  }
+  if (rubric.citationStyle) chips.push(`Referencing <strong>${escape(rubric.citationStyle)}</strong>`);
+  if (rubric.minSources) chips.push(`Sources <strong>${rubric.minSources}+</strong>`);
+  if (rubric.criteria.length) chips.push(`<strong>${rubric.criteria.length}</strong> criteria`);
+  if (rubric.sections.length >= 2) chips.push(`<strong>${rubric.sections.length}</strong> sections named`);
+
+  const overrides = Object.keys(rubric.constraints)
+    .filter((key) => OVERRIDE_LABELS[key])
+    .map((key) => `<li>${escape(OVERRIDE_LABELS[key])}</li>`);
+
+  ui.guideSummary.innerHTML = `
+    ${chips.length ? `<p class="chips">${chips.map((c) => `<span class="chip">${c}</span>`).join('')}</p>` : ''}
+    ${overrides.length
+      ? `<p class="card-label">House rules this guide switches off</p><ul class="overrides">${overrides.join('')}</ul>`
+      : '<p class="overrides">Nothing in this guide conflicts with the house style, so all of it stays on.</p>'}
+    ${rubric.keyTerms.length
+      ? `<p class="guide-terms">Concepts it keeps naming: ${escape(rubric.keyTerms.join(', '))}.</p>`
+      : ''}`;
+  ui.guideSummary.hidden = false;
+
+  const count = Object.keys(rubric.constraints).length;
+  ui.guideSub.textContent = count
+    ? `Guide loaded. ${count} house rule${count === 1 ? '' : 's'} switched off to match it.`
+    : 'Guide loaded.';
+}
+
+const CHECK_MARKS = { pass: '\u2713', fail: '\u2715', warn: '!', info: 'i' };
+
+function renderRubricChecks(draft) {
+  if (!state.rubric || !draft) {
+    ui.rubricCard.hidden = true;
+    return;
+  }
+  const checks = offline ? offline.checkRubric(draft, state.rubric) : state.rubricChecks || [];
+  if (!checks.length) {
+    ui.rubricCard.hidden = true;
+    return;
+  }
+  ui.rubricChecks.innerHTML = checks.map((c) => `
+    <div class="check ${c.status}">
+      <span class="check-mark" aria-hidden="true">${CHECK_MARKS[c.status] || 'i'}</span>
+      <span>
+        <p class="check-label">${escape(c.label)} <span class="sev ${c.status === 'fail' ? 'high' : c.status === 'warn' ? 'medium' : 'low'}">${c.status}</span></p>
+        <p class="check-detail">${escape(c.detail)}</p>
+      </span>
+    </div>`).join('');
+  ui.rubricCard.hidden = false;
+}
+
 // ---------- helpers ----------
 
 function escape(text) {
@@ -427,6 +572,7 @@ async function runClaude(text) {
       text,
       strength: ui.strength.value,
       effort: ui.effort.value,
+      rubricText: state.rubricText,
     }),
   });
   if (!res.ok || !res.body) {
@@ -466,6 +612,7 @@ async function runClaude(text) {
         ui.outCount.textContent = `${wordCount(rewritten).toLocaleString()} words`;
       } else if (event.type === 'done') {
         showOutput(rewritten.trim());
+        state.rubricChecks = event.rubricChecks || [];
         renderDashboard(event.report, state.baseline);
         const bits = [`${event.usage.output.toLocaleString()} tokens out`];
         if (event.usage.cacheRead) bits.push(`${event.usage.cacheRead.toLocaleString()} cached`);
@@ -581,6 +728,81 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault();
     if (!state.busy) run();
   }
+});
+
+function setGuideStatus(message, kind = '') {
+  ui.guideStatus.textContent = message || '';
+  ui.guideStatus.className = `guide-status ${kind}`;
+}
+
+async function loadGuide(source) {
+  setGuideStatus('Reading…');
+  try {
+    const { rubric, text } = await readGuide(source);
+    if (!rubric) throw new Error('Nothing readable in that guide.');
+    state.rubric = rubric;
+    state.rubricText = text;
+    state.baseline = null;               // constraints change the score
+    if (source.file) ui.guideText.value = text;
+    renderGuideSummary();
+    setGuideStatus('Guide applied. Run it again to see the difference.', 'ok');
+    if (state.current) renderDashboard(state.current, null);
+  } catch (error) {
+    setGuideStatus(error.message, 'error');
+  }
+}
+
+ui.guideToggle.addEventListener('click', () => {
+  const open = ui.guideBody.hidden;
+  ui.guideBody.hidden = !open;
+  ui.guideToggle.setAttribute('aria-expanded', String(open));
+  ui.guideToggle.textContent = open ? 'Hide' : 'Add a guide';
+});
+
+ui.guidePick.addEventListener('click', () => ui.guideFile.click());
+ui.guideFile.addEventListener('change', () => {
+  const file = ui.guideFile.files && ui.guideFile.files[0];
+  if (file) loadGuide({ file });
+});
+
+ui.guideRead.addEventListener('click', () => loadGuide({ text: ui.guideText.value }));
+
+ui.guideClear.addEventListener('click', () => {
+  state.rubric = null;
+  state.rubricText = '';
+  state.rubricChecks = [];
+  state.baseline = null;
+  ui.guideText.value = '';
+  ui.guideFile.value = '';
+  ui.rubricCard.hidden = true;
+  renderGuideSummary();
+  setGuideStatus('Guide removed. Back to the house style.');
+  if (state.current) renderDashboard(state.current, null);
+});
+
+for (const event of ['dragenter', 'dragover']) {
+  ui.dropzone.addEventListener(event, (e) => {
+    e.preventDefault();
+    ui.dropzone.classList.add('over');
+  });
+}
+for (const event of ['dragleave', 'drop']) {
+  ui.dropzone.addEventListener(event, () => ui.dropzone.classList.remove('over'));
+}
+ui.dropzone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file) loadGuide({ file });
+});
+
+// Dropping anywhere on the panel works too, which is what people try first.
+ui.guide.addEventListener('dragover', (e) => e.preventDefault());
+ui.guide.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!file) return;
+  if (ui.guideBody.hidden) ui.guideToggle.click();
+  loadGuide({ file });
 });
 
 loadStatus();

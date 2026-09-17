@@ -53,6 +53,31 @@
 <p class="hint" id="engine-note" role="status"></p>
 
 <main>
+  <section class="guide" id="guide">
+    <div class="guide-head">
+      <div>
+        <h2>Marking guide <span class="tag">optional</span></h2>
+        <p class="guide-sub" id="guide-sub">Give it your rubric and it follows the rubric's rules instead of its own where the two disagree.</p>
+      </div>
+      <button type="button" class="ghost" id="guide-toggle" aria-expanded="false" aria-controls="guide-body">Add a guide</button>
+    </div>
+
+    <div id="guide-body" hidden>
+      <div class="dropzone" id="dropzone">
+        <p class="dropzone-main">Drop a <strong>.docx</strong> or <strong>.txt</strong> here</p>
+        <p class="dropzone-or">or <button type="button" class="linkish" id="guide-pick">choose a file</button>, or paste it below</p>
+        <input type="file" id="guide-file" accept=".docx,.txt,.md,.markdown,.rtf,.csv" hidden>
+      </div>
+      <textarea id="guide-text" rows="4" placeholder="Paste the rubric or marking guide here…"></textarea>
+      <div class="guide-actions">
+        <button type="button" class="primary small" id="guide-read">Read the guide</button>
+        <button type="button" class="ghost" id="guide-clear">Remove</button>
+        <span class="guide-status" id="guide-status" role="status"></span>
+      </div>
+      <div id="guide-summary" class="guide-summary" hidden></div>
+    </div>
+  </section>
+
   <section class="panes">
     <div class="pane">
       <div class="pane-head">
@@ -86,6 +111,12 @@
   </section>
 
   <section class="dashboard" id="dashboard" hidden>
+    <div class="card wide" id="rubric-card" hidden>
+      <p class="card-label">Against the marking guide</p>
+      <p class="card-note" id="rubric-note">Only what can be counted. Whether the writing earns the marks is a marker's call.</p>
+      <div id="rubric-checks" class="checks"></div>
+    </div>
+
     <div class="card hero-card">
       <p class="card-label">Human score</p>
       <div class="hero-row">

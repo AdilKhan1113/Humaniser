@@ -21,12 +21,17 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8');
 
 // Dependency order. Each module may only import from ones already listed.
-const MODULES = ['lexicon', 'common-words', 'verbs', 'passive', 'analyze', 'rules'];
+const MODULES = ['lexicon', 'common-words', 'verbs', 'passive', 'analyze', 'rules', 'rubric', 'docx'];
 
 const namespaceFor = (name) => `NS_${name.replace(/-/g, '_')}`;
 
 const IMPORT_RE = /^import\s*\{([\s\S]*?)\}\s*from\s*'\.\/([^']+)\.js';?[ \t]*\n/gm;
-const EXPORT_DECL_RE = /^export\s+(?:const|let|function|class)\s+([A-Za-z_$][\w$]*)/gm;
+// Handles `export async function` and `export function*` as well as the plain
+// forms. Missing a modifier here drops the binding from the namespace silently,
+// which is what happened to `export async function extractDocxText`, so the
+// count is verified against the number of export keywords below.
+const EXPORT_DECL_RE = /^export\s+(?:async\s+)?(?:function\s*\*?|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm;
+const EXPORT_KEYWORD_RE = /^export\s/gm;
 
 /** Rewrites one ES module into a self-contained IIFE assigned to a namespace. */
 function toNamespacedIife(name) {
@@ -35,6 +40,17 @@ function toNamespacedIife(name) {
 
   if (exported.length === 0) {
     throw new Error(`${name}.js exports nothing; the transform expects named exports`);
+  }
+
+  // Every `export` must have yielded a name. A modifier the pattern does not
+  // know would otherwise drop that binding from the namespace with no error,
+  // and the failure only shows up as "not a function" at runtime.
+  const keywordCount = (source.match(EXPORT_KEYWORD_RE) || []).length;
+  if (keywordCount !== exported.length) {
+    throw new Error(
+      `${name}.js has ${keywordCount} export statements but ${exported.length} were parsed `
+      + `(${exported.join(', ')}). Extend EXPORT_DECL_RE for the form it missed.`,
+    );
   }
   for (const form of ['export default', 'export *', 'export {']) {
     if (source.includes(form)) {
@@ -70,18 +86,21 @@ const BRIDGE = `
 // the rules engine instead of talking to a server.
 window.HUMANISER_OFFLINE = {
   build: 'standalone',
-  analyze: (text) => NS_analyze.analyze(text),
-  humanise(text, strength) {
-    const result = NS_rules.humanise(text, { strength });
+  analyze: (text, constraints) => NS_analyze.analyze(text, { constraints }),
+  humanise(text, strength, constraints) {
+    const result = NS_rules.humanise(text, { strength, constraints });
     return {
       text: result.text,
       changes: result.changes,
       byRule: result.byRule,
       profile: result.profile,
-      before: NS_analyze.analyze(text),
-      after: NS_analyze.analyze(result.text),
+      before: NS_analyze.analyze(text, { constraints }),
+      after: NS_analyze.analyze(result.text, { constraints }),
     };
   },
+  parseRubric: (text) => NS_rubric.parseRubric(text),
+  checkRubric: (draft, rubric) => NS_rubric.checkAgainstRubric(draft, rubric),
+  extractDocxText: (buffer) => NS_docx.extractDocxText(buffer),
   profiles: Object.entries(NS_rules.PROFILES).map(([id, p]) => ({
     id, label: p.label, description: p.description,
   })),

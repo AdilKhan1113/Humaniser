@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 import { analyze } from './lib/analyze.js';
 import { humanise, PROFILES } from './lib/rules.js';
+import { parseRubric, checkAgainstRubric } from './lib/rubric.js';
+import { extractDocxText } from './lib/docx.js';
 import { rewriteWithClaude, hasApiKeyInEnv, MODEL, EFFORT_LEVELS } from './lib/claude.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -126,17 +128,27 @@ async function streamClaude(req, res, payload) {
 
   let rewritten = '';
   try {
+    const rubricText = typeof payload.rubricText === 'string' ? payload.rubricText : '';
+    const rubric = rubricText.trim() ? parseRubric(rubricText) : null;
+    const constraints = (rubric && rubric.constraints) || {};
     const options = {
       text,
       strength: payload.strength,
       effort: payload.effort,
       audience: typeof payload.audience === 'string' ? payload.audience : '',
       notes: typeof payload.notes === 'string' ? payload.notes : '',
+      rubric,
+      rubricText,
     };
     for await (const event of rewriteWithClaude(options, controller.signal)) {
       if (event.type === 'delta') rewritten += event.text;
       if (event.type === 'done') {
-        send({ ...event, report: analyze(rewritten.trim()) });
+        const finished = rewritten.trim();
+        send({
+          ...event,
+          report: analyze(finished, { constraints }),
+          rubricChecks: rubric ? checkAgainstRubric(finished, rubric) : null,
+        });
       } else {
         send(event);
       }
@@ -172,20 +184,48 @@ const routes = {
   'POST /api/analyze': async (req, res) => {
     const payload = await readJson(req);
     const text = requireText(payload);
-    sendJson(res, 200, { report: analyze(text) });
+    const constraints = payload.constraints || {};
+    sendJson(res, 200, { report: analyze(text, { constraints }) });
+  },
+
+  // Reads a marking guide. Takes plain text, or a base64 .docx the browser
+  // could not open itself.
+  'POST /api/rubric': async (req, res) => {
+    const payload = await readJson(req);
+    let text = typeof payload.text === 'string' ? payload.text : '';
+
+    if (!text && typeof payload.docxBase64 === 'string') {
+      const bytes = Buffer.from(payload.docxBase64, 'base64');
+      if (bytes.length > 12_000_000) {
+        throw Object.assign(new Error('That file is too large.'), { status: 413 });
+      }
+      try {
+        text = await extractDocxText(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+      } catch (error) {
+        throw Object.assign(new Error(error.message), { status: 400 });
+      }
+    }
+    if (!text.trim()) {
+      throw Object.assign(new Error('Send the guide as text, or as a .docx.'), { status: 400 });
+    }
+    if (text.length > MAX_TEXT) {
+      throw Object.assign(new Error('That guide is too long to read.'), { status: 413 });
+    }
+    sendJson(res, 200, { rubric: parseRubric(text), text });
   },
 
   'POST /api/humanise': async (req, res) => {
     const payload = await readJson(req);
     const text = requireText(payload);
-    const result = humanise(text, { strength: payload.strength });
+    const constraints = payload.constraints || {};
+    const result = humanise(text, { strength: payload.strength, constraints });
     sendJson(res, 200, {
       text: result.text,
       changes: result.changes,
       byRule: result.byRule,
       profile: result.profile,
-      before: analyze(text),
-      after: analyze(result.text),
+      before: analyze(text, { constraints }),
+      after: analyze(result.text, { constraints }),
     });
   },
 

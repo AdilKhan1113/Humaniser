@@ -16,7 +16,7 @@ Download **[humaniser.html](humaniser.html)** and double-click it.
 
 That is the whole thing. No Node, no terminal, no server, no account, no network. The rules engine, the scoring, the charts and the findings are all inside that one file, running in your browser. Your text never leaves the page, which you can verify by opening it with the wifi off.
 
-It gives you everything except the Claude engine, which needs a server to hold the API key. If you have no key, you lose nothing at all.
+It gives you everything except the Claude engine, which needs a server to hold the API key. If you have no key, you lose nothing at all. Marking guides work in it too, `.docx` included: the zip is unpacked in the page.
 
 On a Mac you may see a warning the first time, since the file came from the internet. Right-click it and choose **Open With → your browser** and it will open normally.
 
@@ -104,6 +104,27 @@ Click any finding and it selects that exact phrase in your text. Click a bar in 
 
 **Thinking** appears in Claude mode and sets how hard the model works. Low is fast and surprisingly good. High is the default. Very high is for prose you really care about.
 
+## Feeding it a marking guide
+
+Open **Marking guide**, then drop in your rubric or paste it. It reads `.docx` and plain text. PDFs it cannot read — no parser fits in a single file — so open the PDF, select all, copy, and paste.
+
+What it takes from the guide:
+
+| Read from the guide | What it does with it |
+| --- | --- |
+| Word limit, including `±10%` | Counts your draft against it |
+| "Avoid contractions" | Stops adding them, and writes the ones you have out in full |
+| "Write in the third person" | Stops turning passives into "we", and flags the first person you already have |
+| "Formal academic register" | Implies the two above, and drops warmth from the score |
+| "Continuous prose" | Checks for lists |
+| APA, Harvard, MLA and the rest | Counts your in-text citations against any stated minimum |
+| The concepts it keeps naming | Tells you which ones your draft never mentions |
+| Its criteria lines | Shows them back to you, and says plainly that meeting them is a marker's call |
+
+The part worth having is the conflict handling. Marking guides routinely demand the opposite of this app's house style — no contractions, third person only, formal register — and without the guide the rewriter would push your essay **away** from what it is marked against. With the guide loaded, the panel lists exactly which house rules it switched off, and the score stops penalising formal writing for being formal.
+
+What a guide cannot do offline is satisfy a criterion. "Evaluates critically" and "demonstrates understanding" are judgements, and no amount of counting reaches them. The app says so rather than pretending. In Claude mode the guide goes into the prompt as binding instructions, which does reach the register and the phrasing, though still never the content: neither engine will invent a source or an argument to tick a box.
+
 ## The two engines, and why you would pick one
 
 The **offline rules engine** is a set of transforms with a strict promise: when it cannot be certain, it does nothing. It flips "the cake was eaten by the dog" to "the dog ate the cake" because every piece of that is checkable. It refuses to flip "the window was broken" because nobody said who broke it, so it flags the sentence instead. Nothing leaves your machine, it costs nothing, and it finishes before you lift your finger off the key. What it cannot do is write. It swaps words and shuffles clauses; it will never think of a better metaphor.
@@ -161,13 +182,15 @@ lib/
   verbs.js           Verb tables, so a flip does not invent a tense
   lexicon.js         Word lists: stock phrases, inflated words, contractions
   common-words.js    Frequency list, for the rare-word share and name detection
+  rubric.js          Reads a marking guide and checks a draft against it
+  docx.js            Unzips a .docx to plain text, with no dependency
   prompt.js          The house style, written for Claude
   claude.js          The API call, streaming and error handling
   env.js             Reads .env without needing a newer Node
 public/              The whole front end: one HTML file, one CSS, one JS
 tools/
   build-standalone.js Inlines lib/ and public/ into humaniser.html
-test/                69 tests, run with npm test
+test/                86 tests, run with npm test
 ```
 
 `public/app.js` serves both builds. With a server it calls `/api`; in the single-file build it finds an injected bridge and calls the rules engine directly, so there is one front end rather than two copies drifting apart. A test fails if `humaniser.html` falls behind its sources.
