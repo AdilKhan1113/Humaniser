@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node server.js",
+    "build": "node tools/build-standalone.js",
     "dev": "node --watch server.js",
     "test": "node --test test/*.test.js"
   },

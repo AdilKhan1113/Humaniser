@@ -1,5 +1,10 @@
 // Front end. No framework and no build step: the browser loads this file as-is.
 
+// The standalone single-file build injects this bridge, which is how one
+// app.js serves both: with a server it talks to /api, without one it calls the
+// rules engine that was inlined alongside it.
+const offline = typeof window !== 'undefined' ? window.HUMANISER_OFFLINE || null : null;
+
 const el = (id) => document.getElementById(id);
 
 const ui = {
@@ -83,7 +88,38 @@ async function postJson(path, body) {
   return data;
 }
 
+// Yields one frame so a "Working…" label actually paints before the engine
+// blocks the main thread. Only matters offline, where the work is synchronous.
+const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
+async function getReport(text) {
+  if (offline) {
+    await nextFrame();
+    return offline.analyze(text);
+  }
+  return (await postJson('/api/analyze', { text })).report;
+}
+
+async function getRewrite(text, strength) {
+  if (offline) {
+    await nextFrame();
+    return offline.humanise(text, strength);
+  }
+  return postJson('/api/humanise', { text, strength });
+}
+
 async function loadStatus() {
+  if (offline) {
+    state.status = { offline: true, claude: { keyInEnv: false } };
+    // There is no server to proxy an API call through, so the engine choice is
+    // not a choice. Drop the control rather than show a dead option.
+    ui.mode.closest('.field').hidden = true;
+    ui.effortField.hidden = true;
+    ui.engineNote.textContent = 'Single-file build. Everything runs inside this page: '
+      + 'no install, no server, no network, and your text never leaves the browser.';
+    return;
+  }
+
   try {
     const status = await fetch('/api/status').then((r) => r.json());
     state.status = status;
@@ -358,7 +394,7 @@ async function runAnalyseOnly() {
   if (!text.trim()) { setStatus('Nothing to score yet.', true); return; }
   setBusy(true, 'Scoring…');
   try {
-    const { report } = await postJson('/api/analyze', { text });
+    const report = await getReport(text);
     state.baseline = report;
     state.changes = [];
     showOutput('');
@@ -373,7 +409,7 @@ async function runAnalyseOnly() {
 }
 
 async function runLocal(text) {
-  const result = await postJson('/api/humanise', { text, strength: ui.strength.value });
+  const result = await getRewrite(text, ui.strength.value);
   state.baseline = result.before;
   state.changes = result.changes;
   showOutput(result.text);
@@ -455,10 +491,9 @@ async function run() {
   try {
     // Score the original first, so the dashboard can show the change.
     if (!state.baseline || state.baseline.counts.characters !== text.length) {
-      const { report } = await postJson('/api/analyze', { text });
-      state.baseline = report;
+      state.baseline = await getReport(text);
     }
-    if (ui.mode.value === 'claude') {
+    if (!offline && ui.mode.value === 'claude') {
       await runClaude(text);
     } else {
       await runLocal(text);

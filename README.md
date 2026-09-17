@@ -10,7 +10,19 @@ Humaniser runs as a small local web app on macOS or Linux. It scores your text a
 
 Dark mode comes along for free, following whatever your Mac is set to: [see it](docs/screenshot-dark.png).
 
-## Set it up
+## The quickest way in: one file, nothing to install
+
+Download **[humaniser.html](humaniser.html)** and double-click it.
+
+That is the whole thing. No Node, no terminal, no server, no account, no network. The rules engine, the scoring, the charts and the findings are all inside that one file, running in your browser. Your text never leaves the page, which you can verify by opening it with the wifi off.
+
+It gives you everything except the Claude engine, which needs a server to hold the API key. If you have no key, you lose nothing at all.
+
+On a Mac you may see a warning the first time, since the file came from the internet. Right-click it and choose **Open With → your browser** and it will open normally.
+
+## The full version, with Node
+
+Worth it if you want the Claude engine, or you plan to change the code. Everything below is about that version.
 
 Node 18 or newer is the only thing you need, and macOS does not come with it. Check whether you already have it:
 
@@ -47,6 +59,12 @@ cd Humaniser
 That installs the one dependency, starts the server and opens your browser at `http://127.0.0.1:8787`. On Linux it opens through `xdg-open`; if your box has no desktop session it just prints the address for you to open yourself. The first run takes a few seconds. Every run after that is instant.
 
 Prefer to do it by hand? `npm install && npm start` does the same thing without opening a browser.
+
+To regenerate the single-file build after changing anything under `lib/` or `public/`:
+
+```bash
+npm run build
+```
 
 Cloning a *private* fork is the one case that needs more: GitHub has not accepted account passwords for Git since 2021, so run `gh auth login` first, or use a [personal access token](https://github.com/settings/tokens) with the `repo` scope in place of the password.
 
@@ -134,6 +152,7 @@ It is not a detector. A high score means the writing reads naturally. It is not 
 ## Project layout
 
 ```
+humaniser.html       The generated single-file build. Do not edit: run npm run build
 server.js            HTTP server, routes, streaming. No framework.
 lib/
   analyze.js         Scoring, metrics and every finding in the report
@@ -146,8 +165,12 @@ lib/
   claude.js          The API call, streaming and error handling
   env.js             Reads .env without needing a newer Node
 public/              The whole front end: one HTML file, one CSS, one JS
-test/                64 tests, run with npm test
+tools/
+  build-standalone.js Inlines lib/ and public/ into humaniser.html
+test/                69 tests, run with npm test
 ```
+
+`public/app.js` serves both builds. With a server it calls `/api`; in the single-file build it finds an injected bridge and calls the rules engine directly, so there is one front end rather than two copies drifting apart. A test fails if `humaniser.html` falls behind its sources.
 
 There is no build step. No bundler, no transpiler, no framework. `public/app.js` is the file the browser runs, which means you can change a line and just reload.
 
