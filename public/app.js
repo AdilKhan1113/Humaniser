@@ -87,9 +87,18 @@ async function loadStatus() {
   try {
     const status = await fetch('/api/status').then((r) => r.json());
     state.status = status;
-    ui.engineNote.textContent = status.claude.keyInEnv
-      ? `Claude mode ready with ${status.claude.model}. Offline rules need no key and never leave this machine.`
-      : 'No API key found, so Claude mode will not run. The offline rules engine works without one.';
+
+    if (status.claude.keyInEnv) {
+      ui.engineNote.textContent = `Claude mode ready with ${status.claude.model}. `
+        + 'Offline rules need no key and never leave this machine.';
+    } else {
+      // Nothing to gain from letting someone pick an engine that cannot run.
+      const claudeOption = ui.mode.querySelector('option[value="claude"]');
+      claudeOption.disabled = true;
+      claudeOption.textContent = 'Claude (needs an API key)';
+      ui.engineNote.textContent = 'Running on the offline rules engine. It needs no key, no account '
+        + 'and no network, and your text never leaves this machine.';
+    }
   } catch {
     ui.engineNote.textContent = 'Could not reach the local server.';
   }

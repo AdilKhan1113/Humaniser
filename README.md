@@ -4,6 +4,8 @@ Paste writing that sounds like a committee produced it. Get back something a per
 
 Humaniser runs on your Mac as a small local web app. It scores your text against a house style, shows you exactly where the prose stiffens, and rewrites it two ways: with an offline rules engine that needs no account and no network, or with Claude when you want real judgement applied to rhythm and metaphor.
 
+**No API key required.** The offline engine is the default and it needs nothing — no account, no key, no network. Claude is an optional extra for people who already have API access.
+
 ![two panes, a score, and a chart of sentence lengths](docs/screenshot.png)
 
 Dark mode comes along for free, following whatever your Mac is set to: [see it](docs/screenshot-dark.png).
@@ -30,7 +32,9 @@ Prefer to do it by hand? `npm install && npm start` does the same thing without 
 
 ### Optional: turn on Claude
 
-The offline engine works with no setup at all. For the Claude engine, drop a key into a `.env` file:
+Skip this section entirely unless you have an Anthropic API key. Without one the Claude option stays greyed out and everything else works as normal.
+
+A key is not the same thing as a Claude.ai subscription — it comes from the developer console and is billed per use. If you have one, drop it into a `.env` file:
 
 ```bash
 cp .env.example .env
