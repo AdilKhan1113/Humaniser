@@ -15,7 +15,7 @@ import { analyze } from './lib/analyze.js';
 import { humanise, PROFILES } from './lib/rules.js';
 import { parseRubric, checkAgainstRubric } from './lib/rubric.js';
 import { extractDocxText } from './lib/docx.js';
-import { rewriteWithClaude, hasApiKeyInEnv, MODEL, EFFORT_LEVELS } from './lib/claude.js';
+import { rewrite, hasKey, providerStatus, listModels } from './lib/provider.js';
 import {
   ACCESS_CODE, clientKey, takeToken, sweepBuckets, accessCodeAccepted, limitsForStatus,
 } from './lib/guard.js';
@@ -118,8 +118,8 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
-/** Streams the Claude rewrite to the browser as server-sent events. */
-async function streamClaude(req, res, payload) {
+/** Streams the model's rewrite to the browser as server-sent events. */
+async function streamRewrite(req, res, payload) {
   const text = requireText(payload);
   const controller = new AbortController();
   res.on('close', () => controller.abort());
@@ -148,8 +148,9 @@ async function streamClaude(req, res, payload) {
       notes: typeof payload.notes === 'string' ? payload.notes : '',
       rubric,
       rubricText,
+      model: typeof payload.model === 'string' ? payload.model : undefined,
     };
-    for await (const event of rewriteWithClaude(options, controller.signal)) {
+    for await (const event of rewrite(options, controller.signal)) {
       if (event.type === 'delta') rewritten += event.text;
       if (event.type === 'done') {
         const finished = rewritten.trim();
@@ -177,10 +178,10 @@ const routes = {
   'GET /api/status': async (req, res) => {
     sendJson(res, 200, {
       offline: true,
-      claude: {
-        model: MODEL,
-        keyInEnv: hasApiKeyInEnv(),
-        efforts: EFFORT_LEVELS,
+      // Named `model` rather than `claude`: which provider is in play depends
+      // on which key is set.
+      model: {
+        ...providerStatus(),
         // Whether a code is needed, never the code itself.
         accessCodeRequired: Boolean(ACCESS_CODE),
       },
@@ -241,18 +242,32 @@ const routes = {
     });
   },
 
-  'POST /api/humanise/claude': async (req, res) => {
+  // Which models the configured key can actually reach. Gemini's version
+  // numbers move, so this beats trusting a hardcoded list.
+  'GET /api/models': async (req, res) => {
+    if (!hasKey()) {
+      sendJson(res, 200, { models: [], reason: 'no API key is set' });
+      return;
+    }
+    try {
+      sendJson(res, 200, { models: await listModels() });
+    } catch (error) {
+      sendJson(res, 200, { models: [], reason: error.message });
+    }
+  },
+
+  'POST /api/humanise/model': async (req, res) => {
     const payload = await readJson(req);
     const who = clientKey(req);
 
     // The code is checked before anything reaches the API, so a wrong one costs
     // nothing, and it is counted against its own allowance so that guessing
-    // cannot exhaust the owner's Claude budget.
+    // cannot exhaust the owner's model budget.
     if (!accessCodeAccepted(req.headers['x-access-code'] || payload.accessCode)) {
       const attempts = takeToken(who, 'auth');
       if (!attempts.ok) res.setHeader('retry-after', String(attempts.retryAfter));
       throw Object.assign(
-        new Error('That access code is not right. Claude mode is limited to whoever runs this server.'),
+        new Error('That access code is not right. Model rewrites are limited to whoever runs this server.'),
         { status: attempts.ok ? 401 : 429 },
       );
     }
@@ -261,13 +276,16 @@ const routes = {
     if (!allowance.ok) {
       res.setHeader('retry-after', String(allowance.retryAfter));
       throw Object.assign(
-        new Error('Hourly limit for Claude mode reached. The offline engine has no limit worth hitting.'),
+        new Error('Hourly limit reached for model rewrites. The offline engine has no limit worth hitting.'),
         { status: 429 },
       );
     }
-    await streamClaude(req, res, payload);
+    await streamRewrite(req, res, payload);
   },
 };
+
+// The route was /api/humanise/claude before there was more than one provider.
+routes['POST /api/humanise/claude'] = routes['POST /api/humanise/model'];
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -289,7 +307,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Every API route is flood-limited. Claude mode then counts separately,
+    // Every API route is flood-limited. Model rewrites then count separately,
     // inside its own handler and only once the access code has passed.
     if (url.pathname.startsWith('/api/')) {
       const allowance = takeToken(clientKey(req), 'offline');
@@ -338,20 +356,23 @@ function listen(port, attemptsLeft = 10) {
     console.log('  Humaniser is running');
     console.log(`  http://${shown}:${port}`);
     console.log('');
+    const provider = providerStatus();
     console.log('  Offline rules engine: ready');
-    console.log(`  Claude mode:          ${hasApiKeyInEnv() ? `ready (${MODEL})` : 'no API key found, offline mode still works'}`);
+    console.log(`  Model mode:           ${provider.keyInEnv
+      ? `ready — ${provider.label} (${provider.model})`
+      : 'no API key found, offline mode still works'}`);
 
     if (HOST === '0.0.0.0') {
       console.log('');
       console.log('  Reachable from the network.');
-      if (hasApiKeyInEnv() && !ACCESS_CODE) {
+      if (provider.keyInEnv && !ACCESS_CODE) {
         console.log('  WARNING: an API key is set but HUMANISER_ACCESS_CODE is not.');
         console.log('           Anyone who reaches this URL can spend your API credit.');
         console.log('           Set HUMANISER_ACCESS_CODE to a shared secret and restart.');
       } else if (ACCESS_CODE) {
-        console.log('  Claude mode is behind an access code.');
+        console.log(`  ${provider.label || 'Model'} mode is behind an access code.`);
       }
-      console.log(`  Hourly limits per client: ${limits.claude} Claude, ${limits.offline} offline.`);
+      console.log(`  Hourly limits per client: ${limits.claude} model, ${limits.offline} offline.`);
     }
     console.log('');
     console.log('  Press Control-C to stop.');

@@ -16,7 +16,7 @@ services:
       - key: NODE_ENV
         value: production
       # sync:false means "ask me for this, do not store it in the repo".
-      - key: ANTHROPIC_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
       - key: HUMANISER_ACCESS_CODE
         sync: false

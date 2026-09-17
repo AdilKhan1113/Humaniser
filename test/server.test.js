@@ -53,8 +53,9 @@ test('serves the stylesheet and the script', async () => {
 test('reports what the engines can do', async () => {
   const status = await (await fetch(`${base}/api/status`)).json();
   assert.equal(status.offline, true);
-  assert.equal(status.claude.model, 'claude-opus-5');
-  assert.deepEqual(status.claude.efforts, ['low', 'medium', 'high', 'xhigh']);
+  // No key is set in this run, so no provider is active.
+  assert.equal(status.model.keyInEnv, false);
+  assert.deepEqual(status.model.available.map((p) => p.id).sort(), ['anthropic', 'gemini']);
   assert.equal(status.profiles.length, 3);
 });
 
@@ -113,8 +114,8 @@ test('unknown routes 404', async () => {
   assert.equal((await postJson('/api/nope', {})).status, 404);
 });
 
-test('claude mode fails with a clear message when there is no key', async () => {
-  const res = await postJson('/api/humanise/claude', { text: 'The report was written by Sarah.' });
+test('model mode fails with a clear message when there is no key', async () => {
+  const res = await postJson('/api/humanise/model', { text: 'The report was written by Sarah.' });
   assert.equal(res.status, 200); // the stream opens, then reports the failure inside
   const body = await res.text();
   assert.match(body, /^data: /m);

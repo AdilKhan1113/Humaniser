@@ -24,7 +24,7 @@
       <label for="mode">Engine</label>
       <select id="mode">
         <option value="local" selected>Offline rules</option>
-        <option value="claude">Claude</option>
+        <option value="model">Model rewrite</option>
       </select>
     </div>
     <div class="field">
@@ -40,7 +40,7 @@
       <input type="password" id="access-code" autocomplete="off" placeholder="from whoever runs this">
     </div>
     <div class="field" id="effort-field" hidden>
-      <label for="effort">Thinking</label>
+      <label for="effort" id="effort-label">Thinking</label>
       <select id="effort">
         <option value="low">Low</option>
         <option value="medium">Medium</option>

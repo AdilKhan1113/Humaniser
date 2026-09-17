@@ -40,13 +40,23 @@ A version number means you are set. "command not found" means you need it, so pi
 brew install node
 ```
 
-**Linux.** Your distribution's package may be too old, so check the version after installing. If it is below 18, [nvm](https://github.com/nvm-sh/nvm) is the reliable way round it:
+**Ubuntu and other Debian-based Linux.** The version in `apt` is often too old, so check it after installing:
+
+```bash
+sudo apt update && sudo apt install -y nodejs npm git
+node -v
+```
+
+If that shows anything below 18, use [nvm](https://github.com/nvm-sh/nvm), which does not need root and does not fight your package manager:
 
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
 exec $SHELL
 nvm install 22
+node -v
 ```
+
+Nothing here needs Node 20 or a build toolchain. The app has one dependency and no native modules, so there is nothing to compile.
 
 Whichever route you took, close the terminal afterwards and open a fresh one, so the new `node` command is on your path. Then:
 
@@ -68,23 +78,41 @@ npm run build
 
 Cloning a *private* fork is the one case that needs more: GitHub has not accepted account passwords for Git since 2021, so run `gh auth login` first, or use a [personal access token](https://github.com/settings/tokens) with the `repo` scope in place of the password.
 
-### Optional: turn on Claude
+### Optional: turn on model rewriting
 
-Skip this section entirely unless you have an Anthropic API key. Without one the Claude option stays greyed out and everything else works as normal.
+Skip this unless you have an API key. Without one the model option stays greyed out and everything else works as normal.
 
-A key is not the same thing as a Claude.ai subscription — it comes from the developer console and is billed per use. If you have one, drop it into a `.env` file:
+Either provider works, and **whichever key you set decides which one is used**. Copy the example file:
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and paste your key from [console.anthropic.com](https://console.anthropic.com/settings/keys):
+For **Gemini**, paste a key from [Google AI Studio](https://aistudio.google.com/apikey):
+
+```
+GEMINI_API_KEY=AIza...
+```
+
+For **Claude**, paste one from [the Anthropic console](https://console.anthropic.com/settings/keys) instead:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Restart the server. The Engine menu will switch to Claude, and calls are billed to your own account.
+Restart the server. It prints which provider it picked, and the Engine menu changes to match. Set both keys and `HUMANISER_PROVIDER=gemini` or `=anthropic` chooses.
+
+Note that a key is not the same thing as a Gemini or Claude subscription. Keys come from the developer consoles above and are billed per use, and Google's free tier is generous enough that light use often costs nothing.
+
+**Which model?** The default is each provider's `-latest` alias, so it never points at a retired version. To see exactly what your key can reach:
+
+```bash
+curl -s localhost:8787/api/models | python3 -m json.tool
+```
+
+Then set `GEMINI_MODEL` to whichever you want.
+
+The control next to Strength changes meaning with the provider, and the app labels it accordingly. On Claude it is **Thinking**, which sets reasoning depth. On Gemini it is **Variation**, which sets sampling temperature — higher means more varied phrasing, which is most of what sentence rhythm is.
 
 ## How to use it
 
@@ -131,9 +159,9 @@ What a guide cannot do offline is satisfy a criterion. "Evaluates critically" an
 
 The **offline rules engine** is a set of transforms with a strict promise: when it cannot be certain, it does nothing. It flips "the cake was eaten by the dog" to "the dog ate the cake" because every piece of that is checkable. It refuses to flip "the window was broken" because nobody said who broke it, so it flags the sentence instead. Nothing leaves your machine, it costs nothing, and it finishes before you lift your finger off the key. What it cannot do is write. It swaps words and shuffles clauses; it will never think of a better metaphor.
 
-The **Claude engine** rewrites properly. It varies sentence structure, reaches for a concrete example, and hears when a paragraph plods. It costs money per use and sends your text to the API. Use the offline engine for a quick clean-up and Claude when the writing matters.
+The **model engine** rewrites properly. It varies sentence structure, reaches for a concrete example, and hears when a paragraph plods. It costs money per use and sends your text to whichever API you configured. Use the offline engine for a quick clean-up and the model when the writing matters.
 
-A useful habit: run the offline engine first to see the mechanical problems listed out, then run Claude on the original.
+A useful habit: run the offline engine first to see the mechanical problems listed out, then run the model on the original.
 
 ## What the score measures
 
@@ -189,14 +217,17 @@ lib/
   common-words.js    Frequency list, for the rare-word share and name detection
   rubric.js          Reads a marking guide and checks a draft against it
   docx.js            Unzips a .docx to plain text, with no dependency
-  prompt.js          The house style, written for Claude
-  claude.js          The API call, streaming and error handling
+  prompt.js          The house style, written for a model. Provider agnostic
+  provider.js        Picks a provider from whichever key is set
+  providers/
+    gemini.js        Gemini over its REST API, no SDK needed
+    anthropic.js     Claude via the official SDK
   guard.js           Rate limiting and the access code, for a public deployment
   env.js             Reads .env without needing a newer Node
 public/              The whole front end: one HTML file, one CSS, one JS
 tools/
   build-standalone.js Inlines lib/ and public/ into humaniser.html
-test/                95 tests, run with npm test
+test/                104 tests, run with npm test
 ```
 
 `public/app.js` serves both builds. With a server it calls `/api`; in the single-file build it finds an injected bridge and calls the rules engine directly, so there is one front end rather than two copies drifting apart. A test fails if `humaniser.html` falls behind its sources.
@@ -219,12 +250,15 @@ The offline engine stays open to everyone, because it costs nothing and sends no
 
 | Variable | What it does | Default |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | Turns Claude mode on | unset, offline only |
-| `HUMANISER_ACCESS_CODE` | Password for Claude mode | unset, meaning no password |
+| `GEMINI_API_KEY` | Turns on model rewriting with Gemini | unset, offline only |
+| `ANTHROPIC_API_KEY` | Turns on model rewriting with Claude | unset, offline only |
+| `HUMANISER_PROVIDER` | `gemini` or `anthropic`, when both keys are set | whichever key exists |
+| `GEMINI_MODEL` | Model override | `gemini-flash-latest` |
+| `HUMANISER_ACCESS_CODE` | Password for model rewriting | unset, meaning no password |
 | `HOST` | `0.0.0.0` to accept outside connections | `127.0.0.1` |
 | `PORT` | Port to listen on | `8787` |
 | `TRUST_PROXY` | `1` behind a load balancer, so rate limits see real clients | off |
-| `RATE_LIMIT_CLAUDE` | Claude rewrites per client per hour | `20` |
+| `RATE_LIMIT_CLAUDE` | Model rewrites per client per hour | `20` |
 | `RATE_LIMIT_OFFLINE` | Offline requests per client per hour | `240` |
 
 Leave `TRUST_PROXY` off unless a load balancer really is in front. The header it reads is trivial to forge, and trusting it without one hands every caller an unlimited supply of identities.
@@ -235,7 +269,7 @@ Push the repository, then in Render pick **New → Blueprint** and point it at y
 
 ```bash
 # or paste them into the dashboard
-render env set ANTHROPIC_API_KEY=sk-ant-... --service humaniser
+render env set GEMINI_API_KEY=AIza... --service humaniser
 render env set HUMANISER_ACCESS_CODE=pick-something-long --service humaniser
 ```
 
@@ -245,7 +279,7 @@ You get `https://humaniser-something.onrender.com`. The free tier sleeps when id
 
 ```bash
 fly launch --no-deploy            # claims a name, keeps fly.toml
-fly secrets set ANTHROPIC_API_KEY=sk-ant-... HUMANISER_ACCESS_CODE=pick-something-long
+fly secrets set GEMINI_API_KEY=AIza... HUMANISER_ACCESS_CODE=pick-something-long
 fly deploy
 fly open
 ```
@@ -263,7 +297,7 @@ The image sets `HOST=0.0.0.0` and `TRUST_PROXY=1`, runs as a non-root user, and 
 
 ### What is exposed
 
-Public: the page, the offline engine, `/healthz`, and `/api/status`, which reports only whether a key and a code exist. Behind the access code: Claude mode, the one route that costs money. Never sent to the browser under any circumstances: the API key and the access code, which a test asserts on every route.
+Public: the page, the offline engine, `/healthz`, and `/api/status`, which reports only whether a key and a code exist. Behind the access code: model rewriting, the one route that costs money. Never sent to the browser under any circumstances: the API key and the access code, which a test asserts on every route.
 
 ## Development
 

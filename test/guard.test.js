@@ -39,7 +39,7 @@ test.before(async () => {
 
 test.after(() => { if (server) server.kill(); });
 
-const claude = (headers = {}) => fetch(`${base}/api/humanise/claude`, {
+const claude = (headers = {}) => fetch(`${base}/api/humanise/model`, {
   method: 'POST',
   headers: { 'content-type': 'application/json', ...headers },
   body: JSON.stringify({ text: 'The report was written by Sarah.' }),
@@ -53,7 +53,7 @@ test('answers a health check', async () => {
 
 test('says a code is required without revealing it', async () => {
   const status = await (await fetch(`${base}/api/status`)).json();
-  assert.equal(status.claude.accessCodeRequired, true);
+  assert.equal(status.model.accessCodeRequired, true);
   assert.equal(JSON.stringify(status).includes(CODE), false);
   assert.equal(status.limits.claude, 3);
 });
@@ -66,12 +66,12 @@ test('the key and the code never reach the browser', async () => {
   }
 });
 
-test('claude mode refuses a missing or wrong code', async () => {
+test('model mode refuses a missing or wrong code', async () => {
   assert.equal((await claude()).status, 401);
   assert.equal((await claude({ 'x-access-code': 'wrong' })).status, 401);
 });
 
-test('a wrong code does not consume the claude allowance', async () => {
+test('a wrong code does not consume the model allowance', async () => {
   // Five rejected attempts, on their own client identity.
   const ip = '10.0.0.1';
   for (let i = 0; i < 5; i += 1) {

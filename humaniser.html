@@ -593,7 +593,7 @@ input[type="password"] {
       <label for="mode">Engine</label>
       <select id="mode">
         <option value="local" selected>Offline rules</option>
-        <option value="claude">Claude</option>
+        <option value="model">Model rewrite</option>
       </select>
     </div>
     <div class="field">
@@ -609,7 +609,7 @@ input[type="password"] {
       <input type="password" id="access-code" autocomplete="off" placeholder="from whoever runs this">
     </div>
     <div class="field" id="effort-field" hidden>
-      <label for="effort">Thinking</label>
+      <label for="effort" id="effort-label">Thinking</label>
       <select id="effort">
         <option value="low">Low</option>
         <option value="medium">Medium</option>
@@ -3362,6 +3362,7 @@ const ui = {
   strength: el('strength'),
   effort: el('effort'),
   effortField: el('effort-field'),
+  effortLabel: el('effort-label'),
   codeField: el('code-field'),
   accessCode: el('access-code'),
   run: el('run'),
@@ -3416,7 +3417,7 @@ const state = {
   status: null,
   busy: false,
   rubric: null,       // the parsed guide
-  rubricText: '',     // its raw text, which Claude mode sends verbatim
+  rubricText: '',     // its raw text, which the model receives verbatim
 };
 
 // The house rules a guide can switch off, and what to call them on screen.
@@ -3429,6 +3430,8 @@ const OVERRIDE_LABELS = {
 };
 
 const constraintsNow = () => (state.rubric && state.rubric.constraints) || {};
+
+const EFFORT_NAMES = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Very high' };
 
 const SAMPLE = `It is important to note that the utilization of data-driven methodologies was demonstrated by our team to be highly effective. In today's fast-paced world, organizations are required to leverage numerous analytical frameworks in order to ascertain optimal outcomes. Furthermore, the implementation of these paradigms facilitates the creation of significant value for stakeholders across the entire organization, and it is anticipated that additional benefits will be obtained subsequently.
 
@@ -3538,7 +3541,7 @@ function bytesToBase64(bytes) {
 
 async function loadStatus() {
   if (offline) {
-    state.status = { offline: true, claude: { keyInEnv: false } };
+    state.status = { offline: true, model: { keyInEnv: false } };
     // There is no server to proxy an API call through, so the engine choice is
     // not a choice. Drop the control rather than show a dead option.
     ui.mode.closest('.field').hidden = true;
@@ -3552,8 +3555,11 @@ async function loadStatus() {
     const status = await fetch('/api/status').then((r) => r.json());
     state.status = status;
 
-    if (status.claude.accessCodeRequired) {
-      ui.codeField.hidden = ui.mode.value !== 'claude';
+    const model = status.model || {};
+    const option = ui.mode.querySelector('option[value="model"]');
+
+    if (model.accessCodeRequired) {
+      ui.codeField.hidden = ui.mode.value !== 'model';
       // Kept for this tab only, so a shared computer does not keep the code.
       try {
         const saved = sessionStorage.getItem('humaniser.accessCode');
@@ -3561,15 +3567,25 @@ async function loadStatus() {
       } catch { /* private mode can refuse storage */ }
     }
 
-    if (status.claude.keyInEnv) {
-      ui.engineNote.textContent = `Claude mode ready with ${status.claude.model}.`
-        + (status.claude.accessCodeRequired ? ' It needs the access code from whoever runs this server.' : '')
-        + ` Up to ${status.limits.claude} Claude rewrites an hour. The offline rules need no key at all.`;
+    if (model.keyInEnv) {
+      // The control means different things per provider, so it is labelled by
+      // whichever one is configured.
+      option.textContent = `${model.label} rewrite`;
+      if (model.effortLabel) ui.effortLabel.textContent = model.effortLabel;
+      if (Array.isArray(model.efforts) && model.efforts.length) {
+        const current = ui.effort.value;
+        ui.effort.innerHTML = model.efforts
+          .map((level) => `<option value="${level}">${EFFORT_NAMES[level] || level}</option>`)
+          .join('');
+        ui.effort.value = model.efforts.includes(current) ? current : 'high';
+      }
+      ui.engineNote.textContent = `${model.label} is ready (${model.model}).`
+        + (model.accessCodeRequired ? ' It needs the access code from whoever runs this server.' : '')
+        + ` Up to ${status.limits.claude} rewrites an hour. The offline rules need no key at all.`;
     } else {
       // Nothing to gain from letting someone pick an engine that cannot run.
-      const claudeOption = ui.mode.querySelector('option[value="claude"]');
-      claudeOption.disabled = true;
-      claudeOption.textContent = 'Claude (needs an API key)';
+      option.disabled = true;
+      option.textContent = 'Model rewrite (needs an API key)';
       ui.engineNote.textContent = 'Running on the offline rules engine. It needs no key, no account '
         + 'and no network, and your text never leaves this machine.';
     }
@@ -3773,7 +3789,7 @@ function renderIssues(report) {
 function renderChanges(changes) {
   ui.changesCount.textContent = changes.length;
   if (!changes.length) {
-    ui.changes.innerHTML = '<p class="placeholder">Claude rewrites whole sentences, so there is no line-by-line list. Switch to the offline engine to see every edit.</p>';
+    ui.changes.innerHTML = '<p class="placeholder">A model rewrites whole sentences, so there is no line-by-line list. Switch to the offline engine to see every edit.</p>';
     return;
   }
   ui.changes.innerHTML = changes.map((c) => `
@@ -3923,12 +3939,12 @@ async function runLocal(text) {
   renderDashboard(result.after, result.before);
   setStatus(result.changes.length
     ? `${result.changes.length} edit${result.changes.length === 1 ? '' : 's'} applied by the offline engine.`
-    : 'The rules found nothing to change. Try the Claude engine for a real rewrite.');
+    : 'The rules found nothing to change. A model rewrite would go further.');
 }
 
-async function runClaude(text) {
+async function runModel(text) {
   const code = ui.accessCode.value.trim();
-  const res = await fetch('/api/humanise/claude', {
+  const res = await fetch('/api/humanise/model', {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(code ? { 'x-access-code': code } : {}) },
     body: JSON.stringify({
@@ -3941,7 +3957,7 @@ async function runClaude(text) {
   if (!res.ok || !res.body) {
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) ui.accessCode.focus();
-    throw new Error(data.error || 'Claude mode could not start.');
+    throw new Error(data.error || 'The model rewrite could not start.');
   }
   try {
     if (code) sessionStorage.setItem('humaniser.accessCode', code);
@@ -3950,7 +3966,7 @@ async function runClaude(text) {
   state.changes = [];
   ui.output.textContent = '';
   ui.output.classList.add('streaming');
-  setStatus('Claude is reading…');
+  setStatus('Reading…');
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -3972,7 +3988,7 @@ async function runClaude(text) {
       try { event = JSON.parse(line.slice(6)); } catch { continue; }
 
       if (event.type === 'thinking') {
-        setStatus('Claude is working out the rhythm…');
+        setStatus('Working out the rhythm…');
       } else if (event.type === 'delta') {
         rewritten += event.text;
         ui.output.textContent = rewritten;
@@ -3994,7 +4010,7 @@ async function runClaude(text) {
 
   ui.output.classList.remove('streaming');
   if (failure) throw new Error(failure);
-  if (!rewritten.trim()) throw new Error('Claude returned nothing.');
+  if (!rewritten.trim()) throw new Error('The model returned nothing.');
 }
 
 async function run() {
@@ -4007,8 +4023,8 @@ async function run() {
     if (!state.baseline || state.baseline.counts.characters !== text.length) {
       state.baseline = await getReport(text);
     }
-    if (!offline && ui.mode.value === 'claude') {
-      await runClaude(text);
+    if (!offline && ui.mode.value === 'model') {
+      await runModel(text);
     } else {
       await runLocal(text);
     }
@@ -4028,11 +4044,11 @@ ui.input.addEventListener('input', () => {
 });
 
 ui.mode.addEventListener('change', () => {
-  const claude = ui.mode.value === 'claude';
-  ui.effortField.hidden = !claude;
-  ui.codeField.hidden = !claude || !(state.status && state.status.claude.accessCodeRequired);
-  if (claude && state.status && !state.status.claude.keyInEnv) {
-    setStatus('No API key in the environment. Add one to .env and restart, or stay on the offline engine.', true);
+  const usingModel = ui.mode.value === 'model';
+  ui.effortField.hidden = !usingModel;
+  ui.codeField.hidden = !usingModel || !(state.status && state.status.model.accessCodeRequired);
+  if (usingModel && state.status && !state.status.model.keyInEnv) {
+    setStatus('No API key in the environment. Add GEMINI_API_KEY to .env and restart, or stay on the offline engine.', true);
   } else {
     setStatus('');
   }
