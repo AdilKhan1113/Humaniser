@@ -106,6 +106,8 @@ Click any finding and it selects that exact phrase in your text. Click a bar in 
 
 ## Feeding it a marking guide
 
+![the marking guide panel, with the rubric's requirements checked against the draft](docs/screenshot-rubric.png)
+
 Open **Marking guide**, then drop in your rubric or paste it. It reads `.docx` and plain text. PDFs it cannot read — no parser fits in a single file — so open the PDF, select all, copy, and paste.
 
 What it takes from the guide:
