@@ -262,6 +262,12 @@ cp .env.example .env
 
 Open `.env` in any text editor, put the key after `GEMINI_API_KEY=`, save, and restart with `npm start`. The status line under the rewriter's top bar says "Gemini is ready" when it has worked. Keep the key in `.env` only: that file is ignored by git, so it never ends up on GitHub.
 
+### "Gemini is busy" or "rate limited"
+
+Google answers "overloaded" (HTTP 503) when its servers are busy. It happens most on free-tier keys, which are served last, and on the newest model, which is what the default `gemini-flash-latest` alias points at. The app retries by itself: four tries on the main model with growing waits, honouring any wait Google asks for, then the lighter backup models in `GEMINI_FALLBACK_MODELS`. The terminal shows each retry. If the message still appears, Google has been busy for a while. Wait a few minutes, or turn on billing for the key in Google AI Studio, which gets priority and much higher limits.
+
+"Rate limited" (429) is the free tier's allowance: a handful of requests a minute, and a daily cap per model. Every answer, scan and question to a paper is one request. When a model's daily allowance is used up, the app moves straight to a backup model, since each model has its own allowance.
+
 ## Project layout
 
 ```

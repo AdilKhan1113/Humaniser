@@ -1686,7 +1686,10 @@ async function explorePaper(work, { terms = null, uploaded = false, matched = tr
   }
 
   runSimilar(work, terms);
-  if (status.model?.keyInEnv && !status.model.accessCodeRequired) scanPaper();
+  // Scanning costs a model call. Do it unasked only for a paper the
+  // researcher added on purpose; clicking through More like this would
+  // otherwise burn a free-tier key's per-minute allowance in seconds.
+  if (uploaded && status.model?.keyInEnv && !status.model.accessCodeRequired) scanPaper();
 }
 
 async function runSimilar(work, terms) {
@@ -1744,9 +1747,10 @@ function renderPaperView() {
   const ft = fullTexts.get(work.id);
   const study = studyFor(work);
   const terms = scan?.topics?.length ? scan.topics : (paperState.terms || []);
-  const origin = uploaded
+  const fromPdf = fullTexts.get(work.id)?.via === 'upload';
+  const origin = uploaded && fromPdf
     ? (matched ? `Your PDF, matched to its record in the index${work.citedBy ? `: cited ${nf.format(work.citedBy)} times` : ''}.` : 'Your PDF. It was not found in the index, so citations use only what the PDF says. Add its DOI to cite it properly.')
-    : 'Exploring this paper.';
+    : uploaded ? 'The paper you added.' : 'Exploring this paper.';
   const chips = (xs, attr) => xs.map((t) => `<button type="button" class="chip chip-btn" ${attr}="${esc(t)}">${esc(t)}</button>`).join(' ');
   box.innerHTML = `
     <div class="pv-head">
@@ -1853,7 +1857,7 @@ $('add-id-form').addEventListener('submit', async (e) => {
   try {
     const { work } = await backend.work(/^W\d+$/i.test(value) ? value : `doi:${value}`);
     $('add-dialog').close();
-    explorePaper(work);
+    explorePaper(work, { uploaded: true, matched: true });
   } catch (error) {
     setAddStatus(error.message, true);
   }

@@ -199,3 +199,100 @@ test('a task can bring its own instructions to either provider', () => {
   // And the rewriter's requests are unchanged.
   assert.equal(anthropic.buildRequest({ text: 'x' }).system[0].text, HOUSE_STYLE);
 });
+
+// ---------- Gemini when Google is busy ----------
+
+function sse(text) {
+  return new Response(`data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP' }] })}\n\n`, {
+    status: 200, headers: { 'content-type': 'text/event-stream' },
+  });
+}
+const busy = (status = 503, message = 'The model is overloaded. Please try again later.', details = []) => new Response(
+  JSON.stringify({ error: { code: status, message, status: 'UNAVAILABLE', details } }), { status, headers: { 'content-type': 'application/json' } },
+);
+
+async function withGemini(responder, fn) {
+  const saved = { fetch: globalThis.fetch, key: process.env.GEMINI_API_KEY, warn: console.warn };
+  const calls = [];
+  process.env.GEMINI_API_KEY = 'test-key';
+  console.warn = () => {};
+  gemini.setRetryTiming(1);
+  globalThis.fetch = async (url) => {
+    const model = decodeURIComponent(String(url).match(/models\/([^:]+):/)[1]);
+    calls.push(model);
+    return responder(model, calls.length);
+  };
+  try {
+    await fn(calls);
+  } finally {
+    globalThis.fetch = saved.fetch;
+    console.warn = saved.warn;
+    if (saved.key === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = saved.key;
+    gemini.setRetryTiming(1500);
+  }
+}
+
+async function collect(gen) {
+  const events = [];
+  for await (const e of gen) events.push(e);
+  return events;
+}
+
+test('gemini retries an overloaded model and gets through', async () => {
+  await withGemini((model, n) => (n <= 2 ? busy() : sse('Done.')), async (calls) => {
+    const events = await collect(gemini.rewrite({ text: 'x' }));
+    assert.equal(events.find((e) => e.type === 'delta').text, 'Done.');
+    assert.equal(calls.length, 3);
+    assert.ok(calls.every((m) => m === gemini.MODEL), 'same model until it answers');
+    assert.equal(events.at(-1).fallbackUsed, false);
+  });
+});
+
+test('gemini moves to a backup model when the main one stays busy', async () => {
+  await withGemini((model) => (model === gemini.MODEL ? busy() : sse('From the backup.')), async (calls) => {
+    const events = await collect(gemini.rewrite({ text: 'x' }));
+    const done = events.at(-1);
+    assert.equal(done.fallbackUsed, true);
+    assert.equal(calls.filter((m) => m === gemini.MODEL).length, 4, 'the main model is tried four times first');
+    assert.equal(calls.at(-1), gemini.fallbackModels()[0]);
+  });
+});
+
+test('a backup model the key cannot reach is skipped', async () => {
+  const [first, second] = gemini.fallbackModels();
+  await withGemini((model) => {
+    if (model === gemini.MODEL) return busy();
+    if (model === first) return busy(404, 'not found');
+    return sse('ok');
+  }, async (calls) => {
+    await collect(gemini.rewrite({ text: 'x' }));
+    assert.equal(calls.at(-1), second);
+  });
+});
+
+test('when everything is busy, the message says it is Google and what to do', async () => {
+  await withGemini(() => busy(), async () => {
+    await assert.rejects(collect(gemini.rewrite({ text: 'x' })), (e) => /Gemini is busy right now/.test(e.message)
+      && /Google's side/.test(e.message) && e.status === 503);
+  });
+});
+
+test('a used-up daily quota is explained, and does not waste retries', async () => {
+  const quota = () => busy(429, 'Quota exceeded for metric: generate_content_free_tier_requests, limit: 50 per day');
+  await withGemini(quota, async (calls) => {
+    await assert.rejects(collect(gemini.rewrite({ text: 'x' })), /free daily allowance/);
+    assert.equal(calls.filter((m) => m === gemini.MODEL).length, 1, 'no point retrying a daily limit');
+  });
+});
+
+test('Google\'s requested delay is honoured and a bad key is not retried', async () => {
+  const retryInfo = [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '0.01s' }];
+  await withGemini((m, n) => (n === 1 ? busy(429, 'Resource exhausted', retryInfo) : sse('ok')), async (calls) => {
+    await collect(gemini.rewrite({ text: 'x' }));
+    assert.equal(calls.length, 2);
+  });
+  await withGemini(() => busy(400, 'API key not valid.', [{ reason: 'API_KEY_INVALID' }]), async (calls) => {
+    await assert.rejects(collect(gemini.rewrite({ text: 'x' })), /rejected the API key/);
+    assert.equal(calls.length, 1);
+  });
+});
