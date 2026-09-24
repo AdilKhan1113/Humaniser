@@ -119,6 +119,12 @@ window.HUMANISER_OFFLINE = {
     }),
     connected: (id, kind, opts) => NS_scholar.connectedWorks(id, kind, opts),
     work: (id) => NS_scholar.getWork(id),
+    async similar(b) {
+      const work = b.id ? await NS_scholar.getWork(b.id) : b.work;
+      return NS_scholar.similarWorks({
+        work, text: b.text, terms: b.terms, peerReviewed: !/^(0|false)$/.test(String(b.peerReviewed)),
+      });
+    },
     paraphrase: (text) => NS_paraphrase.paraphraseOffline(text),
     polish: (text) => NS_rules.humanise(text, {
       strength: 'light',

@@ -16,9 +16,13 @@ import { humanise, PROFILES } from './lib/rules.js';
 import { parseRubric, checkAgainstRubric } from './lib/rubric.js';
 import { extractDocxText } from './lib/docx.js';
 import { rewrite, hasKey, providerStatus, listModels } from './lib/provider.js';
-import { searchWorks, getWork, connectedWorks } from './lib/scholar.js';
 import {
-  SYNTHESIS_SYSTEM, MAX_SYNTHESIS_PAPERS, buildSynthesisMessage, parseSynthesis, digest,
+  searchWorks, getWork, connectedWorks, similarWorks, identifyPaper, findDoi,
+} from './lib/scholar.js';
+import { topicTerms } from './lib/keywords.js';
+import {
+  SYNTHESIS_SYSTEM, MAX_SYNTHESIS_PAPERS, buildSynthesisMessage, parseSynthesis, digest, plainText,
+  SCAN_SYSTEM, buildScanMessage, parseScan, ASK_SYSTEM, buildAskMessage,
 } from './lib/insights.js';
 import { readPdf, fetchFullText } from './lib/fulltext.js';
 import {
@@ -286,6 +290,32 @@ async function streamParaphrase(req, res, payload, text) {
   }
 }
 
+/** Runs one model call to completion and returns its text. Provider errors become HTTP ones. */
+async function modelText(options, signal) {
+  let reply = '';
+  try {
+    for await (const event of rewrite(options, signal)) {
+      if (event.type === 'delta') reply += event.text;
+    }
+  } catch (error) {
+    throw Object.assign(new Error(error.message), { status: error.status || (error.code === 'NO_CREDENTIALS' ? 503 : 502) });
+  }
+  return reply;
+}
+
+/** Opens a server-sent event stream and returns a sender for it. */
+function openStream(res) {
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-store',
+    connection: 'keep-alive',
+    'x-accel-buffering': 'no',
+  });
+  return (event) => { if (!res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`); };
+}
+
+const clip = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+
 const bool = (v, fallback) => (v === undefined || v === null || v === '' ? fallback : !/^(0|false|no|off)$/i.test(String(v)));
 
 /** A light copy of a work: what the model reads, and nothing the browser could inflate. */
@@ -381,10 +411,85 @@ const researchRoutes = {
   },
 
   // A PDF the researcher has access to. Read and returned, never kept.
-  'POST /api/research/fulltext/upload': async (req, res) => {
+  // With ?identify=1 it also finds the paper's record in the index, by the
+  // DOI printed in it or by its title, and the phrases it is about.
+  'POST /api/research/fulltext/upload': async (req, res, url) => {
     const bytes = await readRaw(req, MAX_UPLOAD);
     if (!bytes.length) throw Object.assign(new Error('Send the PDF as the request body.'), { status: 400 });
-    sendJson(res, 200, { ...(await readPdf(bytes)), via: 'upload' });
+    const ft = await readPdf(bytes);
+    if (url.searchParams.get('identify') !== '1') {
+      sendJson(res, 200, { ...ft, via: 'upload' });
+      return;
+    }
+    const text = plainText(ft);
+    const front = ft.sections.find((x) => x.kind === 'front')?.paragraphs.map((p) => p.text) || [];
+    const work = await identifyPaper({ doi: findDoi(text), titles: [ft.title, front[0]] }).catch(() => null);
+    sendJson(res, 200, { ...ft, via: 'upload', work, terms: topicTerms(text, 6) });
+  },
+
+  // Papers on the same topic as one paper, indexed or uploaded.
+  'POST /api/research/similar': async (req, res) => {
+    const payload = await readJson(req);
+    let work = null;
+    if (typeof payload.id === 'string' && /^W\d+$/i.test(payload.id)) work = await getWork(payload.id);
+    else if (payload.work && typeof payload.work === 'object') {
+      work = {
+        id: clip(payload.work.id, 80), doi: clip(payload.work.doi, 200), title: clip(payload.work.title, 400),
+        abstract: clip(payload.work.abstract, 4000),
+        keywords: Array.isArray(payload.work.keywords) ? payload.work.keywords.slice(0, 8).map((k) => clip(k, 80)) : [],
+      };
+    }
+    sendJson(res, 200, await similarWorks({
+      work,
+      text: clip(payload.text, 60000),
+      terms: Array.isArray(payload.terms) ? payload.terms.slice(0, 6).map((t) => clip(t, 80)).filter(Boolean) : null,
+      peerReviewed: bool(payload.peerReviewed, true),
+    }));
+  },
+
+  // The model reads one whole paper: summary, findings, limitations, topics, next searches.
+  'POST /api/research/scan': async (req, res) => {
+    const payload = await readJson(req);
+    const text = clip(payload.text, 150000);
+    if (text.trim().length < 200) throw Object.assign(new Error('Not enough of the paper to scan.'), { status: 400 });
+    admitModelCall(req, res, payload);
+    const controller = new AbortController();
+    res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+    const reply = await modelText({
+      text: 'scan', effort: 'low', system: SCAN_SYSTEM, userMessage: buildScanMessage({ title: clip(payload.title, 400), text }),
+    }, controller.signal);
+    sendJson(res, 200, parseScan(reply));
+  },
+
+  // A question about one paper, answered from its text and streamed.
+  'POST /api/research/ask': async (req, res) => {
+    const payload = await readJson(req);
+    const question = clip(payload.question, 1000).trim();
+    const text = clip(payload.text, 150000);
+    if (!question) throw Object.assign(new Error('Ask a question about the paper.'), { status: 400 });
+    if (text.trim().length < 100) throw Object.assign(new Error('There is no text of this paper to answer from.'), { status: 400 });
+    admitModelCall(req, res, payload);
+    const controller = new AbortController();
+    res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+    const paper = payload.paper && typeof payload.paper === 'object' ? {
+      title: clip(payload.paper.title, 400),
+      year: Number.isInteger(payload.paper.year) ? payload.paper.year : null,
+      authors: Array.isArray(payload.paper.authors) ? payload.paper.authors.slice(0, 4).map((a) => ({ family: clip(a?.family || a?.name, 80) })) : [],
+    } : {};
+    const send = openStream(res);
+    try {
+      for await (const event of rewrite({
+        text: question, effort: 'low', system: ASK_SYSTEM,
+        userMessage: buildAskMessage({ paper, text, history: payload.history, question }),
+      }, controller.signal)) {
+        if (event.type === 'delta') send({ type: 'delta', text: event.text });
+        if (event.type === 'done') send({ type: 'done' });
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) send({ type: 'error', message: error.message });
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
   },
 
   'GET /api/research/work': async (req, res, url) => {

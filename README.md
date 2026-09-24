@@ -1,6 +1,6 @@
 # Humaniser
 
-A research assistant and a rewriter in one page. Ask a question and get peer-reviewed papers, a key takeaway, a breakdown of exactly what the question is asking, a cited answer with a consensus meter read from the papers' full texts where they are free, and a table of study designs, samples and findings. Save what matters, paraphrase it with the overlap shown, cite it in six styles, then write it up and smooth the prose, all without leaving the page.
+A research assistant and a rewriter in one page. Ask a question and get peer-reviewed papers, a key takeaway, a breakdown of exactly what the question is asking, a cited answer with a consensus meter read from the papers' full texts where they are free, and a table of study designs, samples and findings. Or start from a paper you already have: add its PDF and get papers on the same topic, then ask it questions and get answers with page numbers. Save what matters, paraphrase it with the overlap shown, cite it in six styles, then write it up and smooth the prose, all without leaving the page.
 
 The rewriter half does what it always did: paste writing that sounds like a committee produced it, and get back something a person would say.
 
@@ -18,7 +18,7 @@ Download **[humaniser.html](humaniser.html)** and double-click it.
 
 That is the whole thing. No Node, no terminal, no server, no account. The rewriter's rules engine, the scoring, the charts and the findings are all inside that one file, running in your browser, and your draft never leaves the page. Research is in there too: it searches OpenAlex straight from the page, so it needs an internet connection, and the only things it sends are your search terms.
 
-It gives you everything except the AI features (the cited answer, AI paraphrasing and the model rewrite), which need a server to hold the API key, and full-text PDF reading, which needs the server to fetch and read the PDFs. If you have no key, you lose nothing at all. Marking guides work in it too, `.docx` included: the zip is unpacked in the page.
+It gives you everything except the AI features (the cited answer, the paper scan, asking a paper, AI paraphrasing and the model rewrite), which need a server to hold the API key, and full-text PDF reading, which needs the server to fetch and read the PDFs. If you have no key, you lose nothing at all. Marking guides work in it too, `.docx` included: the zip is unpacked in the page.
 
 On a Mac you may see a warning the first time, since the file came from the internet. Right-click it and choose **Open With → your browser** and it will open normally.
 
@@ -218,6 +218,12 @@ The index is [OpenAlex](https://openalex.org): more than 250 million scholarly w
 
 **Read the full text, not just the abstract.** **Read full text** on a paper finds its free PDF and reads it: the copy the publisher, a repository or a preprint server holds, following a repository's landing page to its PDF where needed. The paper opens in sections (abstract, methods, results, discussion, conclusion), the reference list removed, and every paragraph shows its page. Click any sentence to paraphrase or quote it, and the page number goes into the citation. It is the printed journal page when the index knows the page range, so page 2 of the PDF of a paper on pages 112–120 is cited as p. 113. For a paper with no free copy, **upload the PDF** you got through your library. It is read and discarded, never stored.
 
+**Start from a paper you already have.** **Add a paper** under the search box takes a PDF or a DOI. A PDF is read, then matched to its record in the index by the DOI printed in it or by its title, so it gets its authors, venue and citation count. What it is about comes from the phrases it repeats most (two-word phrases such as "working memory" count for more than single words). Those phrases, plus the index's own similar-papers graph, bring back **papers on the same topic**. The paper itself sits above them with an at-a-glance panel: design, sample, key finding, and topic chips that run a search when clicked. With a key, Gemini also **scans** it: a summary, key findings and limitations with their pages, and searches to run next. **More like this** on any search result does the same for that paper.
+
+![a paper added from its PDF, with its scan and papers on the same topic](docs/screenshot-paper.png)
+
+**Ask a paper questions.** **Ask this paper** opens a chat about one paper. Answers come only from that paper's text, with the page after each claim, quotation marks where the exact wording matters, and "the paper does not say" rather than a guess. It reads the full text when there is one, fetching the free PDF first if it can, and tells you when it only has the abstract, with a button to upload the PDF. Suggested questions (the main finding, the sample, how things were measured, limitations, future research) get you started, and it remembers the conversation for follow-ups. Copy an answer with its citation, or save it to your findings.
+
 **Get an answer across the papers.** Press **Answer from these papers** and the AI reads the top twelve papers and writes a short answer in which every claim links to the paper behind it. With **Read free full texts** ticked, which is the default, it first fetches the free PDFs and reads their methods, results and discussion instead of the abstract, and says how many it managed. Full texts you opened or uploaded are always used. For a yes-or-no question, a consensus meter shows how many papers say yes, possibly or no. It works only from the abstracts it was given, and it says so, and a citation to a paper it was not given is stripped rather than shown. Copy the answer with real in-text citations in your chosen style, or save it as a finding.
 
 **See the studies side by side.** Switch to **Study table** for one row per paper: design, sample, population and key finding. Sort by strength of evidence (meta-analyses and trials first), sample size, citations or date, and export it as CSV. Without an AI key, the table is filled by pattern matching on the abstract, which catches the common designs and sample sizes and says "not stated" rather than guess. Rows for papers whose full text you have opened are read from the methods and conclusion instead, and each row says which it came from. After an answer, the AI's reading fills the gaps, marked ✦, adds the limitation each paper admits to, and a column shows each paper's stance.
@@ -291,7 +297,7 @@ lib/
 public/              The front end: one page, app.js for the rewriter, research.js for Research
 tools/
   build-standalone.js Inlines lib/ and public/ into humaniser.html
-test/                158 tests, run with npm test
+test/                166 tests, run with npm test
 ```
 
 `public/app.js` serves both builds. With a server it calls `/api`; in the single-file build it finds an injected bridge and calls the rules engine directly, so there is one front end rather than two copies drifting apart. A test fails if `humaniser.html` falls behind its sources.
@@ -361,7 +367,7 @@ The image sets `HOST=0.0.0.0` and `TRUST_PROXY=1`, runs as a non-root user, and 
 
 ### What is exposed
 
-Public: the pages, the offline engine, the scholarly search, full-text reading, the offline paraphraser, `/healthz`, and `/api/status`, which reports only whether a key and a code exist. Behind the access code: model rewriting, model paraphrasing and the cited answer, the routes that cost money.
+Public: the pages, the offline engine, the scholarly search, full-text reading, the offline paraphraser, `/healthz`, and `/api/status`, which reports only whether a key and a code exist. Behind the access code: model rewriting, model paraphrasing, the cited answer, the paper scan and asking a paper, the routes that cost money. They share one hourly allowance per visitor, 20 by default. On your own machine, raise it for longer chats with `RATE_LIMIT_CLAUDE=200` in `.env`.
 
 The full-text reader fetches PDFs from addresses that come from the scholarly index, so it refuses any address that resolves to a private network (localhost, 10.x, 192.168.x, cloud metadata and the IPv6 equivalents), and checks every redirect hop the same way. Uploaded PDFs are read in memory and discarded. Never sent to the browser under any circumstances: the API key and the access code, which a test asserts on every route.
 

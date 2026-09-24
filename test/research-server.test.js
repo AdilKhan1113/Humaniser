@@ -121,3 +121,31 @@ test('full text: a free PDF is found and read, an upload is read, a non-PDF is r
   const bad = await fetch(`${base}/api/research/fulltext/upload`, { method: 'POST', body: 'hello' });
   assert.equal(bad.status, 422);
 });
+
+test('an uploaded paper is identified, and papers on its topic come back', async () => {
+  const pdf = fs.readFileSync(path.join(root, 'test', 'fixtures', 'paper.pdf'));
+  const up = await (await fetch(`${base}/api/research/fulltext/upload?identify=1`, { method: 'POST', body: pdf })).json();
+  assert.equal(up.work.id, 'W1001', 'matched by its title');
+  assert.ok(up.terms.includes('working memory'));
+  const sim = await (await fetch(`${base}/api/research/similar`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'W1001' }),
+  })).json();
+  assert.equal(sim.interpreted.mode, 'similar');
+  assert.ok(!sim.results.some((w) => w.id === 'W1001'));
+});
+
+test('scanning and asking need a key, and say so', async () => {
+  const text = 'word '.repeat(80);
+  const scan = await fetch(`${base}/api/research/scan`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'T', text }),
+  });
+  assert.equal(scan.status, 503);
+  const ask = await fetch(`${base}/api/research/ask`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: 'Why?', text }),
+  });
+  assert.match(await ask.text(), /"type":"error".*API key/);
+  const empty = await fetch(`${base}/api/research/ask`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: 'Why?', text: '' }),
+  });
+  assert.equal(empty.status, 400);
+});

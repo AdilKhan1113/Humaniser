@@ -363,3 +363,83 @@ test('without a model, the takeaway is the strongest study\'s finding', () => {
   assert.match(best.study.finding, /^Across 61 studies/);
   assert.equal(strongestFinding([]), null);
 });
+
+// ---------------------------------------------------------------- one paper in, more like it out
+
+test('a paper\'s topics come from the phrases it repeats', async () => {
+  const { topicTerms } = await import('../lib/keywords.js');
+  const text = 'Working memory declined after sleep restriction. Working memory was tested with an n-back task. '
+    + 'Sleep restriction lowered n-back accuracy. Adolescents with sleep restriction showed poorer working memory.';
+  const terms = topicTerms(text, 4);
+  assert.equal(terms[0], 'working memory');
+  assert.ok(terms.includes('sleep restriction'));
+  assert.ok(!terms.includes('memory'), 'a word already inside a chosen phrase is not repeated');
+  assert.deepEqual(topicTerms(''), []);
+});
+
+test('the DOI printed in a paper is found, and titles are compared fairly', async () => {
+  const { findDoi, titleSimilarity } = await import('../lib/scholar.js');
+  assert.equal(findDoi('Sleep Med. 2019. https://doi.org/10.1016/J.SLEEP.2019.04.012.'), '10.1016/j.sleep.2019.04.012');
+  assert.equal(findDoi('no identifier here'), null);
+  assert.equal(titleSimilarity('Sleep and memory in teens', 'Sleep and memory in teens'), 1);
+  assert.ok(titleSimilarity('Sleep and memory in teens', 'Microplastics in rivers') < 0.2);
+});
+
+test('an upload is matched by title only when the match is close', async (t) => {
+  const { identifyPaper } = await import('../lib/scholar.js');
+  setFetch(async () => new Response(JSON.stringify({ meta: { count: 3 }, results: WORKS }), { status: 200 }));
+  t.after(() => setFetch(null));
+  const hit = await identifyPaper({ titles: ['Sleep deprivation and working memory in adolescents: a randomized crossover trial'] });
+  assert.equal(hit.id, 'W1001');
+  const miss = await identifyPaper({ titles: ['Groundwater nitrate and agricultural runoff in the Po valley'] });
+  assert.equal(miss, null);
+});
+
+test('similar papers merge the graph with a topic search, without the paper itself', async (t) => {
+  const { similarWorks } = await import('../lib/scholar.js');
+  const seen = [];
+  setFetch(async (url) => {
+    seen.push(new URL(url));
+    return new Response(JSON.stringify({ meta: { count: 3 }, results: WORKS }), { status: 200 });
+  });
+  t.after(() => setFetch(null));
+  const paper = normaliseOpenAlex(WORKS[0]);
+  const out = await similarWorks({ work: paper });
+  assert.equal(out.interpreted.mode, 'similar');
+  assert.ok(!out.results.some((w) => w.id === 'W1001'), 'the paper is not similar to itself');
+  assert.deepEqual(out.results.map((w) => w.id), ['W1002', 'W1003'], 'no duplicates across the two sources');
+  assert.ok(seen.some((u) => /related_to:W1001/.test(u.searchParams.get('filter') || '')));
+  assert.ok(seen.some((u) => u.searchParams.get('search')));
+  await assert.rejects(similarWorks({ work: { id: 'upload-1', title: '' } }), /Not enough text/);
+});
+
+test('the scan is parsed and capped', async () => {
+  const { parseScan } = await import('../lib/insights.js');
+  const scan = parseScan('```json\n' + JSON.stringify({
+    summary: 'It tested sleep.', design: 'null', keyFindings: ['a (p. 2)', 'b', 'c', 'd', 'e'],
+    topics: ['sleep', 7, 'memory'], searches: ['x'],
+  }) + '\n```');
+  assert.equal(scan.summary, 'It tested sleep.');
+  assert.equal(scan.design, null);
+  assert.equal(scan.keyFindings.length, 4);
+  assert.deepEqual(scan.topics, ['sleep', 'memory']);
+  assert.throws(() => parseScan('no json'), /expected form/);
+});
+
+test('a question carries the paper with page markers and the conversation so far', async () => {
+  const { paperText, buildAskMessage } = await import('../lib/insights.js');
+  const ft = { sections: [{ title: 'Results', paragraphs: [{ text: 'Accuracy fell.', page: 2 }] }] };
+  const text = paperText(ft, (p) => 110 + p);
+  assert.match(text, /## Results\n\[p\. 112\] Accuracy fell\./);
+  const msg = buildAskMessage({
+    paper: { title: 'T', year: 2019, authors: [{ family: 'Okafor' }] },
+    text,
+    history: [{ q: 'Who?', a: 'Students.' }],
+    question: 'How many?',
+  });
+  assert.match(msg, /^Paper: T by Okafor \(2019\)\./);
+  assert.match(msg, /<paper>[\s\S]*\[p\. 112\][\s\S]*<\/paper>/);
+  assert.match(msg, /Q: Who\?\nA: Students\./);
+  assert.match(msg, /Question: How many\?$/);
+  assert.match(paperText(ft, (p) => p, 20), /cut to fit/);
+});

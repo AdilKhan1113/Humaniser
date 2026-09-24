@@ -8,7 +8,7 @@ import { STYLES, inText, reference, referenceList, bibtex, ris, toPlain } from '
 import { overlap } from '/shared/overlap.js';
 import { splitSentences } from '/shared/sentences.js';
 import {
-  extractStudy, keyFinding, strongestFinding, studiesCsv, digest, MAX_SYNTHESIS_PAPERS,
+  extractStudy, keyFinding, strongestFinding, studiesCsv, digest, paperText, MAX_SYNTHESIS_PAPERS,
 } from '/shared/insights.js';
 
 const $ = (id) => document.getElementById(id);
@@ -105,10 +105,49 @@ const backend = {
     body: JSON.stringify({ question, works, readFullText }),
   }),
   fulltext: (id) => api(`/api/research/fulltext?${new URLSearchParams({ id })}`),
-  upload: (file) => api('/api/research/fulltext/upload', {
+  upload: (file, identify = false) => api(`/api/research/fulltext/upload${identify ? '?identify=1' : ''}`, {
     method: 'POST', headers: { 'content-type': 'application/pdf' }, body: file,
   }),
+  similar: (body) => (bridge ? bridge.similar(body) : api('/api/research/similar', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })),
+  scan: (title, text) => api('/api/research/scan', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-access-code': accessCode() },
+    body: JSON.stringify({ title, text }),
+  }),
 };
+
+/** POSTs and reads a server-sent event stream, handing each text delta to onDelta. */
+async function streamPost(path, body, onDelta) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-access-code': accessCode() },
+    body: JSON.stringify(body),
+  }).catch(() => { throw new Error('Could not reach the server. Is it still running?'); });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `The server answered ${res.status}.`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    let cut;
+    while ((cut = buffer.indexOf('\n\n')) >= 0) {
+      const line = buffer.slice(0, cut).replace(/^data: /, '');
+      buffer = buffer.slice(cut + 2);
+      if (!line.trim()) continue;
+      const event = JSON.parse(line);
+      if (event.type === 'error') throw new Error(event.message);
+      if (event.type === 'delta') onDelta(event.text);
+      if (event.type === 'done') return;
+    }
+  }
+}
 
 // Full texts read this session, by work id. Kept in memory only: a paper's
 // whole text is too big for browser storage, and cheap to fetch again.
@@ -327,6 +366,10 @@ const ui = {
   back: $('back-btn'),
 };
 
+// Cards live in the results and in the paper view, so the card listeners sit
+// on the column that holds both.
+const discover = document.querySelector('.discover');
+
 let lastSearch = null; // { params, page, total, results }
 const workCache = new Map();
 
@@ -358,6 +401,7 @@ async function runSearch({ page = 1, params = searchParams() } = {}) {
   if (!params.q) { ui.q.focus(); return; }
   const append = page > 1;
   if (!append) {
+    if (!params.similar) closePaperView();
     synthesis = null;
     $('answer-note').hidden = true;
     ui.results.hidden = false;
@@ -392,7 +436,7 @@ async function runSearch({ page = 1, params = searchParams() } = {}) {
   }
 }
 
-const MODE_WORDS = { keywords: 'keywords', question: 'a question', sentence: 'a sentence', doi: 'a DOI' };
+const MODE_WORDS = { keywords: 'keywords', question: 'a question', sentence: 'a sentence', doi: 'a DOI', similar: 'the topic of one paper' };
 
 function showSearch(appended = null) {
   const s = lastSearch;
@@ -445,6 +489,8 @@ function workCard(w, terms = []) {
       <button type="button" class="ghost" data-act="cite">Cite</button>
       <button type="button" class="ghost" data-act="abstract" aria-expanded="false" ${w.abstract ? '' : 'disabled title="No abstract in the index"'}>Abstract &amp; paraphrase</button>
       ${bridge ? '' : `<button type="button" class="ghost${fullTexts.has(w.id) ? ' on' : ''}" data-act="fulltext" aria-expanded="false" title="${w.openAccess ? 'Read the free PDF' : 'No free copy listed: upload the PDF if you have access'}">${fullTexts.has(w.id) ? '📄 Full text' : w.openAccess ? 'Read full text' : 'Full text (upload)'}</button>`}
+      <button type="button" class="ghost" data-act="similar" title="Papers on the same topic as this one">More like this</button>
+      ${bridge ? '' : '<button type="button" class="ghost" data-act="ask" title="Ask questions about this paper, answered from its text with page numbers">✦ Ask this paper</button>'}
       ${canConnect ? `<button type="button" class="ghost" data-act="related">Related</button>
       <button type="button" class="ghost" data-act="citing">Cited by</button>
       <button type="button" class="ghost" data-act="references">References</button>` : ''}
@@ -596,7 +642,7 @@ function renderFullText(box, w) {
     <p class="panel-note">Wrong or incomplete? ${uploadControl(w)}</p>`;
 }
 
-ui.results.addEventListener('change', async (e) => {
+discover.addEventListener('change', async (e) => {
   const input = e.target.closest('[data-upload]');
   if (!input || !input.files[0]) return;
   const card = input.closest('.work');
@@ -675,7 +721,11 @@ function openSingle(w) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-ui.results.addEventListener('click', (e) => {
+// The study table handles its own clicks.
+const outsideTable = (e) => !e.target.closest('#table-view');
+
+discover.addEventListener('click', (e) => {
+  if (!outsideTable(e)) return;
   const miniOpen = e.target.closest('[data-mini-open]');
   if (miniOpen) { openSingle(workCache.get(miniOpen.dataset.miniOpen)); return; }
   const miniSave = e.target.closest('[data-mini-save]');
@@ -699,10 +749,12 @@ ui.results.addEventListener('click', (e) => {
   if (act === 'cite') openCite(w);
   if (act === 'abstract') toggleAbstract(card, w, btn);
   if (act === 'fulltext') toggleFullText(card, w, btn);
+  if (act === 'similar') explorePaper(w);
+  if (act === 'ask') openChat(w);
   if (['related', 'citing', 'references'].includes(act)) toggleConnected(card, w, act, btn);
 });
 
-ui.results.addEventListener('keydown', (e) => {
+discover.addEventListener('keydown', (e) => {
   const span = e.target.closest('.sentence');
   if (span && (e.key === 'Enter' || e.key === ' ')) {
     e.preventDefault();
@@ -1596,9 +1648,355 @@ $('answer-btn').addEventListener('click', async () => {
   }
 });
 
+// ---------------------------------------------------------------- one paper: explore and ask
+
+let paperState = null; // { work, terms, uploaded, matched, scan, scanning }
+
+function closePaperView() {
+  paperState = null;
+  $('paper-view').hidden = true;
+  $('paper-view').innerHTML = '';
+}
+
+/** Text of a paper for the model: the full text with page markers, else the abstract. */
+function modelTextFor(work) {
+  const ft = fullTexts.get(work.id);
+  if (ft) return { text: paperText(ft, (p) => printedPage(work, p)), full: true };
+  return { text: work.abstract ? `## Abstract\n${work.abstract}` : '', full: false };
+}
+
+/**
+ * The paper-first path: show the paper, what it is about, and papers on the
+ * same topic. Used by Add a paper and by More like this on any card.
+ */
+async function explorePaper(work, { terms = null, uploaded = false, matched = true } = {}) {
+  workCache.set(work.id, work);
+  paperState = { work, terms, uploaded, matched, scan: null, scanning: false };
+  renderPaperView();
+  $('paper-view').hidden = false;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  // Full text makes the topics, the scan and the questions better. Fetch it
+  // quietly when there is a free copy.
+  if (!fullTexts.has(work.id) && work.openAccess && !bridge && /^W\d+$/.test(work.id)) {
+    backend.fulltext(work.id).then((ft) => {
+      fullTexts.set(work.id, ft);
+      if (paperState?.work.id === work.id) renderPaperView();
+    }).catch(() => { /* the abstract will do */ });
+  }
+
+  runSimilar(work, terms);
+  if (status.model?.keyInEnv && !status.model.accessCodeRequired) scanPaper();
+}
+
+async function runSimilar(work, terms) {
+  ui.results.hidden = false;
+  $('table-view').hidden = true;
+  ui.head.hidden = true;
+  ui.results.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+  $('insight').hidden = true;
+  const ft = fullTexts.get(work.id);
+  const params = { ...searchParams(), q: work.title, similar: true };
+  try {
+    const data = await backend.similar({
+      id: /^W\d+$/.test(work.id) ? work.id : undefined,
+      work: /^W\d+$/.test(work.id) ? undefined : { id: work.id, doi: work.doi, title: work.title, abstract: work.abstract, keywords: work.keywords },
+      text: ft ? ft.sections.filter((x) => ['abstract', 'introduction', 'conclusion'].includes(x.kind)).map((x) => x.paragraphs.map((p) => p.text).join(' ')).join(' ') : '',
+      terms,
+      peerReviewed: params.peerReviewed,
+    });
+    if (paperState?.work.id !== work.id) return;
+    data.results.forEach((w) => workCache.set(w.id, w));
+    synthesis = null;
+    lastSearch = { params, page: 1, total: data.total, results: data.results, interpreted: data.interpreted, query: data.query };
+    showSearch();
+    ui.title.innerHTML = `<strong>${nf.format(data.results.length)}</strong> papers on the same topic`;
+    ui.pager.hidden = true;
+    if (!paperState.terms) { paperState.terms = data.interpreted.terms; renderPaperView(); }
+  } catch (error) {
+    ui.results.innerHTML = `<div class="error-box">${esc(error.message)}</div>`;
+  }
+}
+
+async function scanPaper() {
+  if (!paperState || paperState.scanning) return;
+  const { work } = paperState;
+  const { text } = modelTextFor(work);
+  if (text.length < 200) { toast('There is not enough of this paper to scan. Open its full text or upload it.'); return; }
+  if (!(await ensureAccessCode())) return;
+  paperState.scanning = true;
+  renderPaperView();
+  try {
+    const scan = await backend.scan(work.title, text);
+    if (paperState?.work.id !== work.id) return;
+    paperState.scan = scan;
+  } catch (error) {
+    if (paperState?.work.id === work.id) paperState.scanError = error.message;
+  } finally {
+    if (paperState?.work.id === work.id) { paperState.scanning = false; renderPaperView(); }
+  }
+}
+
+function renderPaperView() {
+  const box = $('paper-view');
+  if (!paperState) return;
+  const { work, uploaded, matched, scan, scanning, scanError } = paperState;
+  const ft = fullTexts.get(work.id);
+  const study = studyFor(work);
+  const terms = scan?.topics?.length ? scan.topics : (paperState.terms || []);
+  const origin = uploaded
+    ? (matched ? `Your PDF, matched to its record in the index${work.citedBy ? `: cited ${nf.format(work.citedBy)} times` : ''}.` : 'Your PDF. It was not found in the index, so citations use only what the PDF says. Add its DOI to cite it properly.')
+    : 'Exploring this paper.';
+  const chips = (xs, attr) => xs.map((t) => `<button type="button" class="chip chip-btn" ${attr}="${esc(t)}">${esc(t)}</button>`).join(' ');
+  box.innerHTML = `
+    <div class="pv-head">
+      <p class="pv-label">${esc(origin)}</p>
+      <button type="button" class="ghost" data-pv="close" aria-label="Close this paper">✕</button>
+    </div>
+    ${workCard(work)}
+    <div class="pv-grid">
+      <div class="pv-facts">
+        <h3 class="pv-h">At a glance</h3>
+        <dl class="focus-facts">
+          <div><dt>Design</dt><dd>${esc(scan?.design || study.design || 'not stated')}</dd></div>
+          <div><dt>Sample</dt><dd>${esc(scan?.sample || study.sample || 'not stated')}</dd></div>
+          <div><dt>Read from</dt><dd>${ft ? `the full text, ${ft.pages} pages` : 'the abstract only'}</dd></div>
+        </dl>
+        ${study.finding && !scan ? `<p class="pv-finding"><strong>Key finding:</strong> ${esc(study.finding)}</p>` : ''}
+        ${terms.length ? `<p class="pv-topics"><strong>About:</strong> ${chips(terms, 'data-topic')}</p>` : ''}
+      </div>
+      <div class="pv-ai">
+        ${scan ? `
+          <h3 class="pv-h">✦ Scan</h3>
+          ${scan.summary ? `<p class="pv-summary">${esc(scan.summary)}</p>` : ''}
+          ${scan.keyFindings.length ? `<p class="pv-sub">Key findings</p><ul class="pv-list">${scan.keyFindings.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+          ${scan.limitations.length ? `<p class="pv-sub">Limitations</p><ul class="pv-list">${scan.limitations.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+          ${scan.searches.length ? `<p class="pv-sub">Search next</p><p>${chips(scan.searches, 'data-topic')}</p>` : ''}`
+        : scanning ? '<p class="answer-loading">✦ Reading the paper…</p>'
+        : status.model?.keyInEnv ? `<p class="pv-sub">${scanError ? esc(scanError) : 'Get a summary, key findings with pages, limitations and searches to run next.'}</p><button type="button" class="primary small" data-pv="scan">✦ Scan this paper</button>`
+        : '<p class="pv-sub">Add a GEMINI_API_KEY to get a summary, key findings and suggested searches.</p>'}
+        ${!bridge ? '<p class="pv-ask"><button type="button" class="ghost" data-pv="ask">✦ Ask this paper a question</button></p>' : ''}
+      </div>
+    </div>`;
+}
+
+$('paper-view').addEventListener('click', (e) => {
+  const act = e.target.closest('[data-pv]')?.dataset.pv;
+  if (act === 'close') { closePaperView(); if (lastSearch && !lastSearch.params.similar) showSearch(); return; }
+  if (act === 'scan') { scanPaper(); return; }
+  if (act === 'ask') { openChat(paperState.work); return; }
+  const topic = e.target.closest('[data-topic]');
+  if (topic) {
+    ui.q.value = topic.dataset.topic;
+    ui.form.querySelector('input[value="auto"]').checked = true;
+    runSearch();
+  }
+});
+
+// Add a paper -----------------------------------------------------
+
+function setAddStatus(msg, error = false) {
+  $('add-status').textContent = msg;
+  $('add-status').classList.toggle('error', error);
+}
+
+$('add-paper-btn').addEventListener('click', () => {
+  setAddStatus('');
+  $('add-id').value = '';
+  $('add-drop').hidden = Boolean(bridge);
+  document.querySelector('.add-or').hidden = Boolean(bridge);
+  $('add-dialog').showModal();
+});
+
+async function addFromPdf(file) {
+  if (!file) return;
+  if (!/pdf/i.test(file.type) && !/\.pdf$/i.test(file.name)) { setAddStatus('That is not a PDF.', true); return; }
+  setAddStatus('Reading the PDF and looking it up in the index…');
+  try {
+    const data = await backend.upload(file, true);
+    const { work: matched, terms, ...ft } = data;
+    const abstract = ft.sections.find((x) => x.kind === 'abstract')?.paragraphs.map((p) => p.text).join(' ') || '';
+    const work = matched || {
+      id: `upload-${Date.now().toString(36)}`,
+      doi: '',
+      title: ft.title || file.name.replace(/\.pdf$/i, ''),
+      authors: [],
+      year: null,
+      type: 'upload',
+      abstract,
+      citedBy: 0,
+      keywords: [],
+      openAccess: false,
+      url: null,
+    };
+    fullTexts.set(work.id, ft);
+    $('add-dialog').close();
+    explorePaper(work, { terms, uploaded: true, matched: Boolean(matched) });
+  } catch (error) {
+    setAddStatus(error.message, true);
+  }
+}
+
+$('add-file').addEventListener('change', () => addFromPdf($('add-file').files[0]));
+$('add-drop').addEventListener('dragover', (e) => { e.preventDefault(); $('add-drop').classList.add('over'); });
+$('add-drop').addEventListener('dragleave', () => $('add-drop').classList.remove('over'));
+$('add-drop').addEventListener('drop', (e) => {
+  e.preventDefault();
+  $('add-drop').classList.remove('over');
+  addFromPdf(e.dataTransfer.files[0]);
+});
+$('add-id-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const value = $('add-id').value.trim();
+  if (!value) return;
+  setAddStatus('Looking it up…');
+  try {
+    const { work } = await backend.work(/^W\d+$/i.test(value) ? value : `doi:${value}`);
+    $('add-dialog').close();
+    explorePaper(work);
+  } catch (error) {
+    setAddStatus(error.message, true);
+  }
+});
+
+// Ask this paper --------------------------------------------------
+
+const chats = new Map(); // work id -> [{ q, a }]
+let chatWork = null;
+
+const SUGGESTIONS = [
+  'What is the main finding?',
+  'Who was studied, and how many?',
+  'How were the key variables measured?',
+  'What are the limitations?',
+  'What future research do the authors suggest?',
+  'Explain the method in plain terms.',
+];
+
+/** Light formatting for an answer: paragraphs, bullets, bold, and page references picked out. */
+function answerHtml(text) {
+  const blocks = esc(text).split(/\n{2,}/).map((block) => {
+    const lines = block.split('\n');
+    if (lines.every((l) => /^\s*([-*•]|\d+\.)\s+/.test(l))) {
+      return `<ul>${lines.map((l) => `<li>${l.replace(/^\s*([-*•]|\d+\.)\s+/, '')}</li>`).join('')}</ul>`;
+    }
+    return `<p>${lines.join('<br>')}</p>`;
+  }).join('');
+  return blocks
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\((pp?\. [\d–-]+(?:, pp?\. [\d–-]+)*)\)/g, '<span class="pageref">($1)</span>');
+}
+
+function renderChat() {
+  const log = chats.get(chatWork.id) || [];
+  $('chat-log').innerHTML = log.length ? log.map((turn, i) => `
+    <div class="turn">
+      <p class="q">${esc(turn.q)}</p>
+      <div class="a${turn.pending ? ' pending' : ''}${turn.error ? ' error' : ''}">${turn.error ? esc(turn.error) : answerHtml(turn.a || '…')}</div>
+      ${turn.a && !turn.pending && !turn.error ? `<div class="row-actions"><button type="button" class="ghost" data-turn="${i}" data-chat="copy">Copy with citation</button><button type="button" class="ghost" data-turn="${i}" data-chat="save">Save as a finding</button></div>` : ''}
+    </div>`).join('') : '<p class="chat-empty">Ask anything about this paper. Answers come only from its text, with page numbers.</p>';
+  $('chat-log').scrollTop = $('chat-log').scrollHeight;
+  $('chat-suggest').innerHTML = SUGGESTIONS.filter((q) => !log.some((t) => t.q === q))
+    .slice(0, 4).map((q) => `<button type="button" class="chip chip-btn" data-suggest="${esc(q)}">${esc(q)}</button>`).join('');
+}
+
+function renderChatSource() {
+  const ft = fullTexts.get(chatWork.id);
+  $('chat-source').innerHTML = ft
+    ? `Reading the full text: ${ft.pages} pages, ${nf.format(ft.words)} words.`
+    : `Only the abstract is available, so answers will be thin. ${uploadControl(chatWork).replace('data-upload', 'data-chat-upload')}`;
+}
+
+async function openChat(work) {
+  if (!status.model?.keyInEnv) { toast('Asking a paper needs an AI key. Add GEMINI_API_KEY to .env and restart.'); return; }
+  if (!(await ensureAccessCode())) return;
+  chatWork = work;
+  workCache.set(work.id, work);
+  $('chat-paper').textContent = `${authorsShort(work)} (${work.year || 'n.d.'}). ${work.title}`;
+  renderChatSource();
+  renderChat();
+  $('chat-dialog').showModal();
+  $('chat-input').focus();
+  if (!fullTexts.has(work.id) && work.openAccess && /^W\d+$/.test(work.id)) {
+    $('chat-source').textContent = 'Fetching the free full text…';
+    try { fullTexts.set(work.id, await backend.fulltext(work.id)); } catch { /* abstract it is */ }
+    if (chatWork?.id === work.id) renderChatSource();
+  }
+}
+
+async function askPaper(question) {
+  const q = question.trim();
+  if (!q || !chatWork) return;
+  const work = chatWork;
+  const { text } = modelTextFor(work);
+  if (text.length < 100) { toast('There is no text of this paper to answer from. Upload its PDF.'); return; }
+  const log = chats.get(work.id) || [];
+  chats.set(work.id, log);
+  const turn = { q, a: '', pending: true };
+  const history = log.filter((t) => t.a && !t.error).map(({ q: hq, a }) => ({ q: hq, a }));
+  log.push(turn);
+  $('chat-input').value = '';
+  $('chat-send').disabled = true;
+  renderChat();
+  try {
+    await streamPost('/api/research/ask', {
+      question: q, text, history,
+      paper: { title: work.title, year: work.year, authors: work.authors },
+    }, (delta) => {
+      turn.a += delta;
+      if (chatWork?.id === work.id) renderChat();
+    });
+  } catch (error) {
+    turn.error = error.message;
+  } finally {
+    turn.pending = false;
+    $('chat-send').disabled = false;
+    if (chatWork?.id === work.id) renderChat();
+  }
+}
+
+$('chat-form').addEventListener('submit', (e) => { e.preventDefault(); askPaper($('chat-input').value); });
+$('chat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); askPaper($('chat-input').value); }
+});
+$('chat-suggest').addEventListener('click', (e) => {
+  const q = e.target.closest('[data-suggest]')?.dataset.suggest;
+  if (q) askPaper(q);
+});
+$('chat-log').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-chat]');
+  if (!btn) return;
+  const turn = chats.get(chatWork.id)[Number(btn.dataset.turn)];
+  // The answer's own (p. 12) references become the style's page citation.
+  const cited = `${turn.a.trim()}\n\n${citeFor(chatWork)}`;
+  if (btn.dataset.chat === 'copy') copy(cited, 'Answer copied with its citation');
+  if (btn.dataset.chat === 'save') {
+    const themeId = await pickTheme();
+    if (!themeId) return;
+    ensureSaved(chatWork);
+    addFinding({ kind: 'note', text: `${turn.q}\n${turn.a.trim()}`, sourceId: chatWork.id, themeId });
+    syncSavedButtons();
+  }
+});
+$('chat-dialog').addEventListener('change', async (e) => {
+  const input = e.target.closest('[data-chat-upload]');
+  if (!input || !input.files[0]) return;
+  $('chat-source').textContent = 'Reading your PDF…';
+  try {
+    fullTexts.set(chatWork.id, await backend.upload(input.files[0]));
+    document.querySelectorAll(`.work[data-id="${CSS.escape(chatWork.id)}"]`).forEach((card) => markFullText(card, chatWork));
+  } catch (error) {
+    toast(error.message);
+  }
+  renderChatSource();
+});
+
 // ---------------------------------------------------------------- takeaway and focus
 
-const MODE_LABEL = { keywords: 'Keywords', question: 'A question', sentence: 'A claim to find evidence for', doi: 'A DOI lookup' };
+const MODE_LABEL = {
+  keywords: 'Keywords', question: 'A question', sentence: 'A claim to find evidence for', doi: 'A DOI lookup',
+  similar: 'The topic of one paper: its own key phrases, plus the index\'s similar-papers graph',
+};
 
 function filtersText(p) {
   const bits = [p.peerReviewed === '0' ? 'all publication types' : 'peer-reviewed journal articles and reviews'];
@@ -1641,6 +2039,9 @@ function renderInsight() {
     ['Outcome', f.outcome], ['Topic', f.topic], ['Context', f.context],
   ].filter(([, v]) => v) : [];
   const terms = s.interpreted.mode === 'keywords' ? [s.query] : s.interpreted.terms;
+  const showing = s.params.similar
+    ? `${nf.format(s.results.length)} papers, similar-papers graph first`
+    : `${nf.format(s.results.length)} of ${nf.format(s.total)}, ${SORT_LABEL[s.params.sort] || 'best match first'}`;
   focus.innerHTML = `
     <h3 id="focus-h" class="focus-h">What we're searching for</h3>
     ${f?.question ? `<p class="focus-q">${esc(f.question)}</p>` : ''}
@@ -1650,7 +2051,7 @@ function renderInsight() {
       <div><dt>Read as</dt><dd>${esc(MODE_LABEL[s.interpreted.mode] || s.interpreted.mode)}</dd></div>
       <div><dt>Search terms</dt><dd class="chips">${terms.map((t) => `<span class="chip"><strong>${esc(t)}</strong></span>`).join('')}</dd></div>
       <div><dt>Looking in</dt><dd>${esc(filtersText(s.params))}</dd></div>
-      <div><dt>Showing</dt><dd>${nf.format(s.results.length)} of ${nf.format(s.total)}, ${SORT_LABEL[s.params.sort] || 'best match first'}</dd></div>
+      <div><dt>Showing</dt><dd>${showing}</dd></div>
     </dl>
     ${f?.nextSearches?.length ? `<p class="focus-next"><strong>Try next:</strong> ${f.nextSearches.map((q) => `<button type="button" class="chip chip-btn" data-next="${esc(q)}">${esc(q)}</button>`).join(' ')}</p>`
       : (status.model?.keyInEnv && !synthesis ? '<p class="focus-hint">Press Answer to break the question into population, exposure and outcome, and get follow-up searches.</p>' : '')}`;

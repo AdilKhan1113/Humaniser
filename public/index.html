@@ -65,6 +65,7 @@
         <textarea id="q" rows="2" placeholder="A word, a question, a sentence from your draft, or a DOI" aria-label="Search for"></textarea>
         <button type="submit" class="primary" id="search-btn">Search</button>
       </div>
+      <p class="start-from">Or start from a paper you already have: <button type="button" class="ghost" id="add-paper-btn">＋ Add a paper</button> <span class="start-note">Upload its PDF or paste its DOI, and get papers on the same topic.</span></p>
       <details class="filters" id="filters">
         <summary>Filters <span class="filter-summary" id="filter-summary"></span></summary>
         <div class="filter-grid">
@@ -93,6 +94,8 @@
         </div>
       </details>
     </form>
+
+    <section class="paper-view" id="paper-view" aria-label="The paper you are exploring" hidden></section>
 
     <div class="result-head" id="result-head" hidden>
       <div>
@@ -422,6 +425,42 @@
       </div>
     </div>
   </details>
+</dialog>
+
+<!-- ------------------------------------------------ add a paper -->
+<dialog id="add-dialog" class="sheet" aria-labelledby="add-h">
+  <form method="dialog" class="sheet-head">
+    <h2 id="add-h">Add a paper</h2>
+    <button class="ghost" value="close" aria-label="Close">✕</button>
+  </form>
+  <p class="sheet-sub">It is read, matched to its record in the index, and used to find papers on the same topic. You can then ask questions about it.</p>
+  <label class="dropzone add-drop" id="add-drop">
+    <span class="dropzone-main">Drop a <strong>PDF</strong> here, or click to choose one</span>
+    <span class="dropzone-or">Read here and discarded, never stored</span>
+    <input type="file" id="add-file" accept="application/pdf,.pdf" hidden>
+  </label>
+  <p class="add-or">or</p>
+  <form id="add-id-form" class="add-id">
+    <input type="text" id="add-id" placeholder="Paste a DOI or a doi.org link" aria-label="DOI" autocomplete="off">
+    <button type="submit" class="primary small">Find it</button>
+  </form>
+  <p class="stream-status" id="add-status" role="status"></p>
+</dialog>
+
+<!-- ------------------------------------------------ ask a paper -->
+<dialog id="chat-dialog" class="sheet wide chat" aria-labelledby="chat-h">
+  <form method="dialog" class="sheet-head">
+    <h2 id="chat-h">Ask this paper</h2>
+    <button class="ghost" value="close" aria-label="Close">✕</button>
+  </form>
+  <p class="sheet-sub" id="chat-paper"></p>
+  <p class="chat-source" id="chat-source"></p>
+  <div class="chat-log" id="chat-log" aria-live="polite"></div>
+  <div class="chips chat-suggest" id="chat-suggest"></div>
+  <form id="chat-form" class="chat-form">
+    <textarea id="chat-input" class="boxed" rows="2" placeholder="Ask about the methods, the results, a definition, a limitation…" aria-label="Your question"></textarea>
+    <button type="submit" class="primary" id="chat-send">Ask</button>
+  </form>
 </dialog>
 
 <!-- ------------------------------------------------ small prompt dialog -->
