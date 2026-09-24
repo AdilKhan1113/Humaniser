@@ -16,6 +16,10 @@ import { humanise, PROFILES } from './lib/rules.js';
 import { parseRubric, checkAgainstRubric } from './lib/rubric.js';
 import { extractDocxText } from './lib/docx.js';
 import { rewrite, hasKey, providerStatus, listModels } from './lib/provider.js';
+import { searchWorks, getWork, connectedWorks } from './lib/scholar.js';
+import {
+  paraphraseOffline, PARAPHRASE_SYSTEM, buildParaphraseMessage, parseModelVariants,
+} from './lib/paraphrase.js';
 import {
   ACCESS_CODE, clientKey, takeToken, sweepBuckets, accessCodeAccepted, limitsForStatus,
 } from './lib/guard.js';
@@ -26,6 +30,14 @@ const HOST = process.env.HOST || '127.0.0.1';
 const BASE_PORT = Number(process.env.PORT) || 8787;
 const MAX_BODY = 1_000_000; // 1 MB of prose is roughly 160,000 words
 const MAX_TEXT = 200_000;
+
+// Pure modules the browser imports as-is, so the reference list and the
+// overlap check run the same code on both sides. An allowlist, not a directory.
+const SHARED = {
+  '/shared/cite.js': path.join(here, 'lib', 'cite.js'),
+  '/shared/overlap.js': path.join(here, 'lib', 'overlap.js'),
+  '/shared/sentences.js': path.join(here, 'lib', 'sentences.js'),
+};
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -97,7 +109,13 @@ function requireText(payload) {
 }
 
 async function serveStatic(req, res, pathname) {
-  const wanted = pathname === '/' ? '/index.html' : pathname;
+  if (SHARED[pathname]) {
+    const data = await fs.readFile(SHARED[pathname]);
+    res.writeHead(200, { 'content-type': MIME['.js'], 'content-length': data.length, 'cache-control': 'no-cache' });
+    res.end(data);
+    return;
+  }
+  const wanted = pathname === '/' ? '/index.html' : pathname === '/research' ? '/research.html' : pathname;
   // Resolve, then confirm the result is still inside public/, which is what
   // stops "/../../etc/passwd" from ever being read.
   const target = path.join(PUBLIC_DIR, path.normalize(wanted));
@@ -174,7 +192,117 @@ async function streamRewrite(req, res, payload) {
   }
 }
 
+/** The access code and hourly allowance every model call has to clear. Throws when it does not. */
+function admitModelCall(req, res, payload) {
+  const who = clientKey(req);
+  // The code is checked before anything reaches the API, so a wrong one costs
+  // nothing, and it is counted against its own allowance so that guessing
+  // cannot exhaust the owner's model budget.
+  if (!accessCodeAccepted(req.headers['x-access-code'] || payload.accessCode)) {
+    const attempts = takeToken(who, 'auth');
+    if (!attempts.ok) res.setHeader('retry-after', String(attempts.retryAfter));
+    throw Object.assign(
+      new Error('That access code is not right. Model rewrites are limited to whoever runs this server.'),
+      { status: attempts.ok ? 401 : 429 },
+    );
+  }
+  const allowance = takeToken(who, 'claude');
+  if (!allowance.ok) {
+    res.setHeader('retry-after', String(allowance.retryAfter));
+    throw Object.assign(
+      new Error('Hourly limit reached for model rewrites. The offline engine has no limit worth hitting.'),
+      { status: 429 },
+    );
+  }
+}
+
+/** Streams model paraphrases, then sends them split and scored for overlap. */
+async function streamParaphrase(req, res, payload, text) {
+  const controller = new AbortController();
+  res.on('close', () => controller.abort());
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-store',
+    connection: 'keep-alive',
+    'x-accel-buffering': 'no',
+  });
+  const send = (event) => { if (!res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`); };
+  let reply = '';
+  try {
+    const options = {
+      text,
+      effort: 'low',
+      system: PARAPHRASE_SYSTEM,
+      userMessage: buildParaphraseMessage({
+        text,
+        context: typeof payload.context === 'string' ? payload.context : '',
+        discipline: typeof payload.discipline === 'string' ? payload.discipline : '',
+      }),
+    };
+    for await (const event of rewrite(options, controller.signal)) {
+      if (event.type === 'delta') { reply += event.text; send(event); }
+      if (event.type === 'done') send({ ...event, variants: parseModelVariants(text, reply) });
+    }
+  } catch (error) {
+    if (controller.signal.aborted) { res.end(); return; }
+    send({ type: 'error', code: error.code || 'UNKNOWN', message: error.message });
+  } finally {
+    if (!res.writableEnded) res.end();
+  }
+}
+
+const bool = (v, fallback) => (v === undefined || v === null || v === '' ? fallback : !/^(0|false|no|off)$/i.test(String(v)));
+
+const researchRoutes = {
+  // A word, a question, a sentence from a draft, or a DOI.
+  'GET /api/research/search': async (req, res, url) => {
+    const p = url.searchParams;
+    sendJson(res, 200, await searchWorks({
+      q: p.get('q') || '',
+      mode: p.get('mode') || 'auto',
+      sort: p.get('sort') || 'relevance',
+      peerReviewed: bool(p.get('peerReviewed'), true),
+      openAccess: bool(p.get('openAccess'), false),
+      fromYear: p.get('fromYear'),
+      toYear: p.get('toYear'),
+      minCitations: p.get('minCitations'),
+      page: p.get('page'),
+      perPage: p.get('perPage'),
+    }));
+  },
+
+  'GET /api/research/work': async (req, res, url) => {
+    sendJson(res, 200, { work: await getWork(url.searchParams.get('id') || '') });
+  },
+
+  // related | citing | references
+  'GET /api/research/connected': async (req, res, url) => {
+    const p = url.searchParams;
+    sendJson(res, 200, await connectedWorks(p.get('id') || '', p.get('kind') || 'related', {
+      peerReviewed: bool(p.get('peerReviewed'), false),
+      perPage: p.get('perPage'),
+      sort: p.get('sort'),
+    }));
+  },
+
+  'POST /api/research/paraphrase': async (req, res) => {
+    const payload = await readJson(req);
+    const text = requireText(payload);
+    if (text.length > 4000) {
+      throw Object.assign(new Error('Paraphrase a sentence or a short passage at a time, not a whole section.'), { status: 413 });
+    }
+    if (payload.engine === 'model') {
+      admitModelCall(req, res, payload);
+      await streamParaphrase(req, res, payload, text);
+      return;
+    }
+    sendJson(res, 200, paraphraseOffline(text));
+  },
+};
+
 const routes = {
+  ...researchRoutes,
+
   'GET /api/status': async (req, res) => {
     sendJson(res, 200, {
       offline: true,
@@ -258,28 +386,7 @@ const routes = {
 
   'POST /api/humanise/model': async (req, res) => {
     const payload = await readJson(req);
-    const who = clientKey(req);
-
-    // The code is checked before anything reaches the API, so a wrong one costs
-    // nothing, and it is counted against its own allowance so that guessing
-    // cannot exhaust the owner's model budget.
-    if (!accessCodeAccepted(req.headers['x-access-code'] || payload.accessCode)) {
-      const attempts = takeToken(who, 'auth');
-      if (!attempts.ok) res.setHeader('retry-after', String(attempts.retryAfter));
-      throw Object.assign(
-        new Error('That access code is not right. Model rewrites are limited to whoever runs this server.'),
-        { status: attempts.ok ? 401 : 429 },
-      );
-    }
-
-    const allowance = takeToken(who, 'claude');
-    if (!allowance.ok) {
-      res.setHeader('retry-after', String(allowance.retryAfter));
-      throw Object.assign(
-        new Error('Hourly limit reached for model rewrites. The offline engine has no limit worth hitting.'),
-        { status: 429 },
-      );
-    }
+    admitModelCall(req, res, payload);
     await streamRewrite(req, res, payload);
   },
 };
@@ -321,7 +428,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (routes[key]) {
-      await routes[key](req, res);
+      await routes[key](req, res, url);
       return;
     }
     if (req.method === 'GET') {
@@ -355,6 +462,7 @@ function listen(port, attemptsLeft = 10) {
     console.log('');
     console.log('  Humaniser is running');
     console.log(`  http://${shown}:${port}`);
+    console.log(`  Research workspace: http://${shown}:${port}/research`);
     console.log('');
     const provider = providerStatus();
     console.log('  Offline rules engine: ready');

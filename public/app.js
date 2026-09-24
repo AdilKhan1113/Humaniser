@@ -196,6 +196,8 @@ async function loadStatus() {
     // not a choice. Drop the control rather than show a dead option.
     ui.mode.closest('.field').hidden = true;
     ui.effortField.hidden = true;
+    // Research searches go through the server too, so there is nowhere to go.
+    document.querySelector('.appnav')?.remove();
     ui.engineNote.textContent = 'Single-file build. Everything runs inside this page: '
       + 'no install, no server, no network, and your text never leaves the browser.';
     return;

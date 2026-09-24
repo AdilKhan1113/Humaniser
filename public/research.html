@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Humaniser Research</title>
+<meta name="description" content="Find peer-reviewed papers from a word, a question or a sentence, organise what you find, paraphrase with the overlap shown, and cite in any major style.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="research.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">❝</span>
+    <div>
+      <h1>Research</h1>
+      <p class="brand-sub">Find it, organise it, put it in your own words, cite it.</p>
+    </div>
+  </div>
+
+  <nav class="appnav" aria-label="Tools">
+    <a href="/" class="navlink">Rewriter</a>
+    <a href="/research" class="navlink current" aria-current="page">Research</a>
+  </nav>
+
+  <div class="controls">
+    <div class="field">
+      <label for="project">Project</label>
+      <div class="inline">
+        <select id="project"></select>
+        <button type="button" class="ghost" id="project-menu-btn" aria-haspopup="true" aria-expanded="false" title="Project options">⋯</button>
+        <div class="menu" id="project-menu" role="menu" hidden>
+          <button type="button" role="menuitem" data-act="new">New project</button>
+          <button type="button" role="menuitem" data-act="rename">Rename</button>
+          <button type="button" role="menuitem" data-act="export">Back up (.json)</button>
+          <button type="button" role="menuitem" data-act="import">Restore from backup</button>
+          <button type="button" role="menuitem" data-act="delete" class="danger">Delete project</button>
+        </div>
+        <input type="file" id="import-file" accept=".json,application/json" hidden>
+      </div>
+    </div>
+    <div class="field">
+      <label for="style">Citation style</label>
+      <select id="style"></select>
+    </div>
+  </div>
+</header>
+
+<main class="research">
+  <!-- ------------------------------------------------ discover -->
+  <section class="discover" aria-labelledby="discover-h">
+    <h2 id="discover-h" class="visually-hidden">Find literature</h2>
+
+    <form class="searchbox" id="search-form" role="search">
+      <div class="modes" role="radiogroup" aria-label="What are you searching with?">
+        <label><input type="radio" name="mode" value="auto" checked><span>Auto</span></label>
+        <label><input type="radio" name="mode" value="keywords"><span>Keywords</span></label>
+        <label><input type="radio" name="mode" value="question"><span>A question</span></label>
+        <label><input type="radio" name="mode" value="sentence"><span>Evidence for a sentence</span></label>
+      </div>
+      <div class="query-row">
+        <textarea id="q" rows="2" placeholder="A word, a question, a sentence from your draft, or a DOI" aria-label="Search for"></textarea>
+        <button type="submit" class="primary" id="search-btn">Search</button>
+      </div>
+      <details class="filters" id="filters">
+        <summary>Filters <span class="filter-summary" id="filter-summary"></span></summary>
+        <div class="filter-grid">
+          <label class="check-inline"><input type="checkbox" id="f-peer" checked> Peer-reviewed journals only</label>
+          <label class="check-inline"><input type="checkbox" id="f-oa"> Free to read</label>
+          <div class="field">
+            <label for="f-from">From year</label>
+            <input type="number" id="f-from" min="1500" max="2100" placeholder="any" inputmode="numeric">
+          </div>
+          <div class="field">
+            <label for="f-to">To year</label>
+            <input type="number" id="f-to" min="1500" max="2100" placeholder="any" inputmode="numeric">
+          </div>
+          <div class="field">
+            <label for="f-cites">Cited at least</label>
+            <input type="number" id="f-cites" min="0" placeholder="0" inputmode="numeric">
+          </div>
+          <div class="field">
+            <label for="f-sort">Order</label>
+            <select id="f-sort">
+              <option value="relevance">Best match</option>
+              <option value="cited">Most cited</option>
+              <option value="newest">Newest</option>
+            </select>
+          </div>
+        </div>
+      </details>
+    </form>
+
+    <div class="result-head" id="result-head" hidden>
+      <div>
+        <p class="result-title" id="result-title"></p>
+        <div class="chips" id="interpreted"></div>
+      </div>
+      <button type="button" class="ghost" id="back-btn" hidden>← Back to results</button>
+    </div>
+
+    <div id="results" class="results" aria-live="polite">
+      <div class="empty">
+        <p class="empty-title">Start with whatever you have.</p>
+        <ul class="empty-list">
+          <li><button type="button" class="linkish" data-example="keywords">A topic</button>: <em>microplastics freshwater</em></li>
+          <li><button type="button" class="linkish" data-example="question">A question</button>: <em>Does sleep deprivation affect working memory in adolescents?</em></li>
+          <li><button type="button" class="linkish" data-example="sentence">A claim from your draft</button>, to find papers that support it</li>
+        </ul>
+        <p class="empty-note">Searches OpenAlex, an open index of more than 250 million scholarly works, with citation counts and venue data. Peer-reviewed journals only unless you change the filter.</p>
+      </div>
+    </div>
+    <div class="pager" id="pager" hidden>
+      <button type="button" class="ghost" id="more-btn">Load more</button>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------ workspace -->
+  <aside class="workspace" aria-label="Your project">
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" class="tab active" data-tab="sources" aria-selected="true" aria-controls="panel-sources" id="tab-sources">Sources <span class="pill" id="count-sources">0</span></button>
+      <button type="button" role="tab" class="tab" data-tab="findings" aria-selected="false" aria-controls="panel-findings" id="tab-findings">Findings <span class="pill" id="count-findings">0</span></button>
+      <button type="button" role="tab" class="tab" data-tab="references" aria-selected="false" aria-controls="panel-references" id="tab-references">References</button>
+    </div>
+
+    <div role="tabpanel" id="panel-sources" aria-labelledby="tab-sources">
+      <div class="panel-tools">
+        <input type="search" id="source-filter" placeholder="Filter saved sources" aria-label="Filter saved sources">
+        <button type="button" class="ghost" id="add-manual">Add by DOI</button>
+      </div>
+      <div id="sources" class="stack"></div>
+    </div>
+
+    <div role="tabpanel" id="panel-findings" aria-labelledby="tab-findings" hidden>
+      <div class="panel-tools">
+        <button type="button" class="ghost" id="add-theme">New theme</button>
+        <button type="button" class="ghost" id="add-note">Add a note</button>
+        <button type="button" class="ghost" id="export-findings">Export outline</button>
+      </div>
+      <p class="panel-note">Group what you find by theme or by section of your paper. Every quote and paraphrase keeps its citation.</p>
+      <div id="findings" class="stack"></div>
+    </div>
+
+    <div role="tabpanel" id="panel-references" aria-labelledby="tab-references" hidden>
+      <div class="panel-tools">
+        <button type="button" class="ghost" id="copy-refs">Copy list</button>
+        <button type="button" class="ghost" id="dl-bib">BibTeX</button>
+        <button type="button" class="ghost" id="dl-ris">RIS</button>
+        <button type="button" class="ghost" id="dl-txt">Text</button>
+      </div>
+      <label class="check-inline small"><input type="checkbox" id="refs-cited-only"> Only sources used in findings</label>
+      <ol id="references" class="reflist"></ol>
+    </div>
+  </aside>
+</main>
+
+<!-- ------------------------------------------------ cite dialog -->
+<dialog id="cite-dialog" class="sheet" aria-labelledby="cite-h">
+  <form method="dialog" class="sheet-head">
+    <h2 id="cite-h">Cite this</h2>
+    <button class="ghost" value="close" aria-label="Close">✕</button>
+  </form>
+  <p class="sheet-sub" id="cite-work"></p>
+  <div class="cite-controls">
+    <div class="field">
+      <label for="cite-style">Style</label>
+      <select id="cite-style"></select>
+    </div>
+    <div class="field">
+      <label for="cite-page">Page or range</label>
+      <input type="text" id="cite-page" placeholder="e.g. 12 or 12-14" autocomplete="off">
+    </div>
+  </div>
+  <div class="cite-rows" id="cite-rows"></div>
+  <p class="sheet-foot">Check the result against your style guide: indexes sometimes hold a title in capitals or miss an issue number.</p>
+</dialog>
+
+<!-- ------------------------------------------------ paraphrase dialog -->
+<dialog id="para-dialog" class="sheet wide" aria-labelledby="para-h">
+  <form method="dialog" class="sheet-head">
+    <h2 id="para-h">Paraphrase</h2>
+    <button class="ghost" value="close" aria-label="Close">✕</button>
+  </form>
+  <p class="sheet-sub" id="para-work"></p>
+
+  <label class="mini-label" for="para-source">From the paper</label>
+  <textarea id="para-source" class="boxed" rows="3"></textarea>
+
+  <div class="para-controls">
+    <div class="field">
+      <label for="para-engine">Engine</label>
+      <select id="para-engine">
+        <option value="offline">Offline (instant)</option>
+        <option value="model" disabled>Model (needs a key)</option>
+      </select>
+    </div>
+    <div class="field" id="para-code-field" hidden>
+      <label for="para-code">Access code</label>
+      <input type="password" id="para-code" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="para-page">Page</label>
+      <input type="text" id="para-page" placeholder="optional" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="para-place">Citation</label>
+      <select id="para-place">
+        <option value="end">At the end of the sentence</option>
+        <option value="narrative">Named in the sentence</option>
+      </select>
+    </div>
+    <button type="button" class="primary" id="para-run">Paraphrase</button>
+  </div>
+  <p class="stream-status" id="para-status" role="status"></p>
+
+  <div id="para-variants" class="variants"></div>
+
+  <details class="quote-instead">
+    <summary>Quote it word for word instead</summary>
+    <p class="panel-note">Some wording is too exact to change: a definition, a precise finding. Quote it, and give the page.</p>
+    <div class="cite-row">
+      <p class="cite-text" id="quote-text"></p>
+      <div class="row-actions">
+        <button type="button" class="ghost" id="quote-copy">Copy</button>
+        <button type="button" class="ghost" id="quote-save">Save as finding</button>
+      </div>
+    </div>
+  </details>
+</dialog>
+
+<!-- ------------------------------------------------ small prompt dialog -->
+<dialog id="ask-dialog" class="sheet narrow" aria-labelledby="ask-h">
+  <form method="dialog" id="ask-form">
+    <h2 id="ask-h"></h2>
+    <p class="sheet-sub" id="ask-sub"></p>
+    <textarea id="ask-input" class="boxed" rows="1"></textarea>
+    <select id="ask-select" hidden></select>
+    <div class="ask-actions">
+      <button class="ghost" value="cancel" formnovalidate>Cancel</button>
+      <button class="primary" value="ok" id="ask-ok">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" hidden></div>
+
+<footer>
+  <p>Your projects stay in this browser. Back them up from the project menu. Paper data comes from <a href="https://openalex.org" rel="noopener">OpenAlex</a> and <a href="https://www.crossref.org" rel="noopener">Crossref</a>.</p>
+</footer>
+
+<script type="module" src="research.js"></script>
+</body>
+</html>

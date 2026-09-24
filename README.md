@@ -200,6 +200,38 @@ It will not guess at grammar. English participles are irregular enough that a co
 
 It is not a detector. A high score means the writing reads naturally. It is not a claim about what any particular detection tool will say, and the app never pretends otherwise.
 
+## The research workspace
+
+Open **Research** in the top bar, or go to `/research`. It is the other half of writing from sources: finding the papers, keeping track of what they say, putting it in your own words, and citing it properly.
+
+![search results with evidence highlighted, and a findings board with citations attached](docs/screenshot-research.png)
+
+**Search with whatever you have.** A topic (`microplastics freshwater`), a question (`Does sleep deprivation affect working memory in adolescents?`), a claim lifted from your draft, or a DOI. Questions and sentences are mostly glue words, which full-text search ranks badly, so the app pulls out the content words and shows you what it actually searched for. For a question or a claim, each result also shows the abstract sentences that match, so you can see the supporting line without opening the paper.
+
+The index is [OpenAlex](https://openalex.org): more than 250 million scholarly works, free, with citation counts, venues and open-access links. By default you only see **peer-reviewed journal articles and reviews with a DOI**, retracted papers excluded. Turn that off to include books, conference papers and preprints, which are labelled as such. Filter by year, by citation count, or to papers that are free to read, and sort by best match, most cited or newest.
+
+**Follow the trail.** Every paper has three buttons. **Related** shows OpenAlex's similar works. **Cited by** shows newer papers that built on it. **References** shows what it built on.
+
+**Organise as you go.** Save papers to **Sources** and tag them. Then collect **Findings**: quotes, paraphrases and your own notes. Sort them into themes, which can be arguments or the sections of your paper, and drag them between themes. Every finding keeps its source, so its citation is always one click away. **Export outline** writes the themes out as Markdown, each finding already cited and the reference list at the bottom. Projects are separate, one per paper or chapter.
+
+**Paraphrase with the overlap shown.** Open a paper's abstract and click any sentence to paraphrase it, quote it, or search for other papers that say the same thing. The paraphraser gives you three versions to write over. The offline engine moves the attribution ("We found that X" becomes "X, as the authors found"), swaps reporting verbs and stock academic phrases, fronts subordinate clauses, and flips simple passives. The model engine, when a key is set, does the part that needs judgement. Numbers, statistics and technical terms are left alone either way.
+
+Every version, including your edits as you type, is checked against the source:
+
+| Shows | Means |
+| --- | --- |
+| Your own words | Different in wording and structure. Keep the citation |
+| Close to the source | A run of five or more words survived, or a quarter of the three-word sequences did. Change the structure, not just the words |
+| Too close | Seven words in a row, or nearly half the sequences. Rework it, or quote it with a page number |
+
+This is not a plagiarism checker and it does not claim to be one. It tells you whether the wording is still the author's, which is the thing you need to know before the sentence goes into your draft. A paraphrase still needs a citation, and the app always attaches one.
+
+**Cite in six styles:** APA 7th, MLA 9th, Chicago author-date, Harvard, IEEE and Vancouver. For any paper you get the reference-list entry, the in-text citation for the end of a sentence (`(Okafor et al., 2019, p. 114)`), and the narrative form for when the authors are named in the sentence (`Okafor et al. (2019)`). Add a page or a range and it is formatted the way the style wants. Two papers by the same authors in the same year become 2019a and 2019b. Numeric styles number sources in the order you saved them. The **References** tab builds the whole list and updates when you change style. Copy it, or download it as BibTeX or RIS for Zotero, Mendeley, EndNote or Overleaf.
+
+Your projects stay in the browser. What leaves it is your search terms, and the passage you paraphrase if you pick the model engine. **Back up** from the project menu writes a `.json` file, and **Restore** reads it back on any machine.
+
+Citation data is only as good as the index. Titles sometimes arrive in capitals and issue numbers go missing, so check the final list against your style guide. To get faster, more reliable answers from OpenAlex, set `SCHOLAR_EMAIL` in `.env`. The address is sent with each request to OpenAlex and Crossref, the way both ask.
+
 ## Project layout
 
 ```
@@ -223,11 +255,17 @@ lib/
     gemini.js        Gemini over its REST API, no SDK needed
     anthropic.js     Claude via the official SDK
   guard.js           Rate limiting and the access code, for a public deployment
+  scholar.js         OpenAlex and Crossref search, normalised to one record shape
+  keywords.js        Turns a question or a sentence into a search
+  cite.js            Six citation styles, BibTeX and RIS. Also runs in the browser
+  paraphrase.js      The offline paraphraser, and the model prompt for one
+  overlap.js         How close a paraphrase is to its source. Also runs in the browser
+  sentences.js       Sentence splitting that survives "et al." and "0.62"
   env.js             Reads .env without needing a newer Node
-public/              The whole front end: one HTML file, one CSS, one JS
+public/              The front end: index.* is the rewriter, research.* the workspace
 tools/
   build-standalone.js Inlines lib/ and public/ into humaniser.html
-test/                104 tests, run with npm test
+test/                136 tests, run with npm test
 ```
 
 `public/app.js` serves both builds. With a server it calls `/api`; in the single-file build it finds an injected bridge and calls the rules engine directly, so there is one front end rather than two copies drifting apart. A test fails if `humaniser.html` falls behind its sources.
@@ -297,7 +335,7 @@ The image sets `HOST=0.0.0.0` and `TRUST_PROXY=1`, runs as a non-root user, and 
 
 ### What is exposed
 
-Public: the page, the offline engine, `/healthz`, and `/api/status`, which reports only whether a key and a code exist. Behind the access code: model rewriting, the one route that costs money. Never sent to the browser under any circumstances: the API key and the access code, which a test asserts on every route.
+Public: the pages, the offline engine, the scholarly search, the offline paraphraser, `/healthz`, and `/api/status`, which reports only whether a key and a code exist. Behind the access code: model rewriting and model paraphrasing, the routes that cost money. Never sent to the browser under any circumstances: the API key and the access code, which a test asserts on every route.
 
 ## Development
 

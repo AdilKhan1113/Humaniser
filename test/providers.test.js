@@ -185,3 +185,17 @@ test('a status payload never carries a key', () => {
     if (saved) process.env.GEMINI_API_KEY = saved; else delete process.env.GEMINI_API_KEY;
   }
 });
+
+// ---------- other tasks ----------
+
+test('a task can bring its own instructions to either provider', () => {
+  const options = { text: 'x', system: 'PARAPHRASE RULES', userMessage: 'Paraphrase this passage' };
+  const a = anthropic.buildRequest(options);
+  assert.equal(a.system[0].text, 'PARAPHRASE RULES');
+  assert.equal(a.messages[0].content, 'Paraphrase this passage');
+  const g = gemini.buildRequest(options);
+  assert.equal(g.systemInstruction.parts[0].text, 'PARAPHRASE RULES');
+  assert.equal(g.contents[0].parts[0].text, 'Paraphrase this passage');
+  // And the rewriter's requests are unchanged.
+  assert.equal(anthropic.buildRequest({ text: 'x' }).system[0].text, HOUSE_STYLE);
+});
