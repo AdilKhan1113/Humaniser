@@ -272,9 +272,9 @@ Open `.env` in any text editor, put the key after `GEMINI_API_KEY=`, save, and r
 
 ### "Gemini is busy" or "rate limited"
 
-Google answers "overloaded" (HTTP 503) when its servers are busy. It happens most on free-tier keys, which are served last, and on the newest model, which is what the default `gemini-flash-latest` alias points at. The app retries by itself: four tries on the main model with growing waits, honouring any wait Google asks for, then the lighter backup models in `GEMINI_FALLBACK_MODELS`. The terminal shows each retry. If the message still appears, Google has been busy for a while. Wait a few minutes, or turn on billing for the key in Google AI Studio, which gets priority and much higher limits.
+Google answers "overloaded" (HTTP 503) when its servers are busy. It happens most on free-tier keys, which are served last. The app uses Gemini Flash-Lite (`gemini-flash-lite-latest`), the fastest and least often overloaded Flash model, and nothing else. It retries by itself: four tries with growing waits, honouring any wait Google asks for. It only switches to another model if you list backups in `GEMINI_FALLBACK_MODELS`. The terminal shows each retry. If the message still appears, Google has been busy for a while. Wait a few minutes, or turn on billing for the key in Google AI Studio, which gets priority and much higher limits.
 
-"Rate limited" (429) is the free tier's allowance: a handful of requests a minute, and a daily cap per model. Every answer, scan and question to a paper is one request. When a model's daily allowance is used up, the app moves straight to a backup model, since each model has its own allowance.
+"Rate limited" (429) is the free tier's allowance: a handful of requests a minute, and a daily cap per model. Every answer, scan and question to a paper is one request. When the daily allowance is used up, retrying cannot help, so the app says so straight away. Backup models listed in `GEMINI_FALLBACK_MODELS` each have their own allowance.
 
 ## Project layout
 
@@ -337,7 +337,7 @@ The offline engine stays open to everyone, because it costs nothing and sends no
 | `GEMINI_API_KEY` | Turns on model rewriting with Gemini | unset, offline only |
 | `ANTHROPIC_API_KEY` | Turns on model rewriting with Claude | unset, offline only |
 | `HUMANISER_PROVIDER` | `gemini` or `anthropic`, when both keys are set | whichever key exists |
-| `GEMINI_MODEL` | Model override | `gemini-flash-latest` |
+| `GEMINI_MODEL` | Model override | `gemini-flash-lite-latest` |
 | `HUMANISER_ACCESS_CODE` | Password for model rewriting | unset, meaning no password |
 | `HOST` | `0.0.0.0` to accept outside connections | `127.0.0.1` |
 | `PORT` | Port to listen on | `8787` |

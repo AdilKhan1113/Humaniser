@@ -216,10 +216,11 @@ const busy = (status = 503, message = 'The model is overloaded. Please try again
   JSON.stringify({ error: { code: status, message, status: 'UNAVAILABLE', details } }), { status, headers: { 'content-type': 'application/json' } },
 );
 
-async function withGemini(responder, fn) {
-  const saved = { fetch: globalThis.fetch, key: process.env.GEMINI_API_KEY, warn: console.warn };
+async function withGemini(responder, fn, { backups = null } = {}) {
+  const saved = { fetch: globalThis.fetch, key: process.env.GEMINI_API_KEY, warn: console.warn, backups: process.env.GEMINI_FALLBACK_MODELS };
   const calls = [];
   process.env.GEMINI_API_KEY = 'test-key';
+  if (backups) process.env.GEMINI_FALLBACK_MODELS = backups; else delete process.env.GEMINI_FALLBACK_MODELS;
   console.warn = () => {};
   gemini.setRetryTiming(1);
   globalThis.fetch = async (url) => {
@@ -233,6 +234,7 @@ async function withGemini(responder, fn) {
     globalThis.fetch = saved.fetch;
     console.warn = saved.warn;
     if (saved.key === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = saved.key;
+    if (saved.backups === undefined) delete process.env.GEMINI_FALLBACK_MODELS; else process.env.GEMINI_FALLBACK_MODELS = saved.backups;
     gemini.setRetryTiming(1500);
   }
 }
@@ -253,18 +255,27 @@ test('gemini retries an overloaded model and gets through', async () => {
   });
 });
 
-test('gemini moves to a backup model when the main one stays busy', async () => {
+test('gemini uses Flash-Lite and nothing else by default', async () => {
+  assert.equal(gemini.MODEL, 'gemini-flash-lite-latest');
+  assert.deepEqual(gemini.fallbackModels(), []);
+  await withGemini(() => busy(), async (calls) => {
+    await assert.rejects(collect(gemini.rewrite({ text: 'x', model: 'gemini-pro-latest' })), /busy/);
+    assert.ok(calls.length === 4 && calls.every((m) => m === 'gemini-flash-lite-latest'), calls.join(','));
+  });
+});
+
+test('gemini moves to a backup model only when backups are listed', async () => {
   await withGemini((model) => (model === gemini.MODEL ? busy() : sse('From the backup.')), async (calls) => {
     const events = await collect(gemini.rewrite({ text: 'x' }));
     const done = events.at(-1);
     assert.equal(done.fallbackUsed, true);
     assert.equal(calls.filter((m) => m === gemini.MODEL).length, 4, 'the main model is tried four times first');
-    assert.equal(calls.at(-1), gemini.fallbackModels()[0]);
-  });
+    assert.equal(calls.at(-1), 'gemini-flash-latest');
+  }, { backups: 'gemini-flash-latest,gemini-2.5-flash' });
 });
 
 test('a backup model the key cannot reach is skipped', async () => {
-  const [first, second] = gemini.fallbackModels();
+  const [first, second] = ['gemini-old-model', 'gemini-flash-latest'];
   await withGemini((model) => {
     if (model === gemini.MODEL) return busy();
     if (model === first) return busy(404, 'not found');
@@ -272,7 +283,7 @@ test('a backup model the key cannot reach is skipped', async () => {
   }, async (calls) => {
     await collect(gemini.rewrite({ text: 'x' }));
     assert.equal(calls.at(-1), second);
-  });
+  }, { backups: `${first},${second}` });
 });
 
 test('when everything is busy, the message says it is Google and what to do', async () => {

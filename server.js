@@ -205,7 +205,6 @@ async function streamRewrite(req, res, payload) {
       notes: typeof payload.notes === 'string' ? payload.notes : '',
       rubric,
       rubricText,
-      model: typeof payload.model === 'string' ? payload.model : undefined,
     };
     for await (const event of rewrite(options, controller.signal)) {
       if (event.type === 'delta') rewritten += event.text;
