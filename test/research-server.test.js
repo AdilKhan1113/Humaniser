@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 // The real server, with OpenAlex answered from fixtures by a preload, so the
@@ -100,4 +101,23 @@ test('answers need a key, and say so', async () => {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: 'x', works: [] }),
   });
   assert.equal(empty.status, 400);
+});
+
+test('full text: a free PDF is found and read, an upload is read, a non-PDF is refused', async () => {
+  const free = await fetch(`${base}/api/research/fulltext?id=W1001`);
+  assert.equal(free.status, 200);
+  const ft = await free.json();
+  assert.equal(ft.via, 'open access');
+  assert.ok(ft.sections.some((s) => s.kind === 'results'));
+
+  const none = await fetch(`${base}/api/research/fulltext?id=W1002`);
+  assert.equal(none.status, 404);
+
+  const pdf = fs.readFileSync(path.join(root, 'test', 'fixtures', 'paper.pdf'));
+  const up = await fetch(`${base}/api/research/fulltext/upload`, { method: 'POST', headers: { 'content-type': 'application/pdf' }, body: pdf });
+  assert.equal(up.status, 200);
+  assert.equal((await up.json()).via, 'upload');
+
+  const bad = await fetch(`${base}/api/research/fulltext/upload`, { method: 'POST', body: 'hello' });
+  assert.equal(bad.status, 422);
 });

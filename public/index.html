@@ -108,8 +108,13 @@
           <button type="button" role="tab" class="seg on" data-rview="list" aria-selected="true">Papers</button>
           <button type="button" role="tab" class="seg" data-rview="table" aria-selected="false">Study table</button>
         </div>
-        <button type="button" class="primary small" id="answer-btn">✦ Answer from these papers</button>
+        <div class="answer-controls">
+          <label class="check-inline small" id="read-full-wrap" title="Fetches the free PDFs of the top papers and reads their methods, results and discussion, not just the abstract"><input type="checkbox" id="read-full" checked> Read free full texts</label>
+          <button type="button" class="primary small" id="answer-btn">✦ Answer from these papers</button>
+        </div>
       </div>
+      <section class="takeaway" id="takeaway" aria-label="Key takeaway" hidden></section>
+      <section class="focus" id="focus" aria-labelledby="focus-h" hidden></section>
       <p class="insight-note" id="answer-note" hidden></p>
       <div id="answer" class="answer" aria-live="polite" hidden></div>
     </section>

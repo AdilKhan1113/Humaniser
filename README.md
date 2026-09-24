@@ -1,6 +1,6 @@
 # Humaniser
 
-A research assistant and a rewriter in one page. Ask a question and get peer-reviewed papers, a cited answer with a consensus meter, and a table of study designs, samples and findings. Save what matters, paraphrase it with the overlap shown, cite it in six styles, then write it up and smooth the prose, all without leaving the page.
+A research assistant and a rewriter in one page. Ask a question and get peer-reviewed papers, a key takeaway, a breakdown of exactly what the question is asking, a cited answer with a consensus meter read from the papers' full texts where they are free, and a table of study designs, samples and findings. Save what matters, paraphrase it with the overlap shown, cite it in six styles, then write it up and smooth the prose, all without leaving the page.
 
 The rewriter half does what it always did: paste writing that sounds like a committee produced it, and get back something a person would say.
 
@@ -18,7 +18,7 @@ Download **[humaniser.html](humaniser.html)** and double-click it.
 
 That is the whole thing. No Node, no terminal, no server, no account. The rewriter's rules engine, the scoring, the charts and the findings are all inside that one file, running in your browser, and your draft never leaves the page. Research is in there too: it searches OpenAlex straight from the page, so it needs an internet connection, and the only things it sends are your search terms.
 
-It gives you everything except the AI features (the cited answer, AI paraphrasing and the model rewrite), which need a server to hold the API key. If you have no key, you lose nothing at all. Marking guides work in it too, `.docx` included: the zip is unpacked in the page.
+It gives you everything except the AI features (the cited answer, AI paraphrasing and the model rewrite), which need a server to hold the API key, and full-text PDF reading, which needs the server to fetch and read the PDFs. If you have no key, you lose nothing at all. Marking guides work in it too, `.docx` included: the zip is unpacked in the page.
 
 On a Mac you may see a warning the first time, since the file came from the internet. Right-click it and choose **Open With → your browser** and it will open normally.
 
@@ -58,7 +58,7 @@ nvm install 22
 node -v
 ```
 
-Nothing here needs Node 20 or a build toolchain. The app has one dependency and no native modules, so there is nothing to compile.
+Nothing here needs Node 20 or a build toolchain. The app has two dependencies and no native modules, so there is nothing to compile.
 
 Whichever route you took, close the terminal afterwards and open a fresh one, so the new `node` command is on your path. Then:
 
@@ -68,7 +68,7 @@ cd Humaniser
 ./start.sh
 ```
 
-That installs the one dependency, starts the server and opens your browser at `http://127.0.0.1:8787`. On Linux it opens through `xdg-open`; if your box has no desktop session it just prints the address for you to open yourself. The first run takes a few seconds. Every run after that is instant.
+That installs the two dependencies, starts the server and opens your browser at `http://127.0.0.1:8787`. On Linux it opens through `xdg-open`; if your box has no desktop session it just prints the address for you to open yourself. The first run takes a few seconds. Every run after that is instant.
 
 Prefer to do it by hand? `npm install && npm start` does the same thing without opening a browser.
 
@@ -212,9 +212,15 @@ Research is the first thing you see; **Rewriter** is the other tab in the top ba
 
 The index is [OpenAlex](https://openalex.org): more than 250 million scholarly works, free, with citation counts, venues and open-access links. By default you only see **peer-reviewed journal articles and reviews with a DOI**, retracted papers excluded. Turn that off to include books, conference papers and preprints, which are labelled as such. Filter by year, by citation count, or to papers that are free to read, and sort by best match, most cited or newest.
 
-**Get an answer across the papers.** Press **Answer from these papers** and the AI reads the top twelve abstracts and writes a short answer in which every claim links to the paper behind it. For a yes-or-no question, a consensus meter shows how many papers say yes, possibly or no. It works only from the abstracts it was given, and it says so, and a citation to a paper it was not given is stripped rather than shown. Copy the answer with real in-text citations in your chosen style, or save it as a finding.
+**Key takeaway, first.** Above everything else sits one sentence: the most important point. Before you ask the AI, it is the finding of the strongest study in the results, with its design and citation count, so a meta-analysis outranks a single survey. After an answer, it is the AI's one-line takeaway across all the papers, with each claim linked to its paper.
 
-**See the studies side by side.** Switch to **Study table** for one row per paper: design, sample, population and key finding. Sort by strength of evidence (meta-analyses and trials first), sample size, citations or date, and export it as CSV. Without an AI key, the table is filled by pattern matching on the abstract, which catches the common designs and sample sizes and says "not stated" rather than guess. After an answer, the AI's reading fills the gaps, marked ✦, and a column shows each paper's stance.
+**What we're searching for.** Under the takeaway, a panel spells out what the search is actually looking for: the terms it sent, how it read your input, which kinds of publication it is searching and how the results are ordered. After an answer, the AI breaks the question into its parts: population, exposure or intervention, comparison and outcome, or topic and context for questions that are not about an effect. It adds the kind of evidence that would settle the question and two or three follow-up searches you can run with one click.
+
+**Read the full text, not just the abstract.** **Read full text** on a paper finds its free PDF and reads it: the copy the publisher, a repository or a preprint server holds, following a repository's landing page to its PDF where needed. The paper opens in sections (abstract, methods, results, discussion, conclusion), the reference list removed, and every paragraph shows its page. Click any sentence to paraphrase or quote it, and the page number goes into the citation. It is the printed journal page when the index knows the page range, so page 2 of the PDF of a paper on pages 112–120 is cited as p. 113. For a paper with no free copy, **upload the PDF** you got through your library. It is read and discarded, never stored.
+
+**Get an answer across the papers.** Press **Answer from these papers** and the AI reads the top twelve papers and writes a short answer in which every claim links to the paper behind it. With **Read free full texts** ticked, which is the default, it first fetches the free PDFs and reads their methods, results and discussion instead of the abstract, and says how many it managed. Full texts you opened or uploaded are always used. For a yes-or-no question, a consensus meter shows how many papers say yes, possibly or no. It works only from the abstracts it was given, and it says so, and a citation to a paper it was not given is stripped rather than shown. Copy the answer with real in-text citations in your chosen style, or save it as a finding.
+
+**See the studies side by side.** Switch to **Study table** for one row per paper: design, sample, population and key finding. Sort by strength of evidence (meta-analyses and trials first), sample size, citations or date, and export it as CSV. Without an AI key, the table is filled by pattern matching on the abstract, which catches the common designs and sample sizes and says "not stated" rather than guess. Rows for papers whose full text you have opened are read from the methods and conclusion instead, and each row says which it came from. After an answer, the AI's reading fills the gaps, marked ✦, adds the limitation each paper admits to, and a column shows each paper's stance.
 
 **Follow the trail.** Every paper has three buttons. **Related** shows OpenAlex's similar works. **Cited by** shows newer papers that built on it. **References** shows what it built on.
 
@@ -278,13 +284,14 @@ lib/
   cite.js            Six citation styles, BibTeX and RIS. Also runs in the browser
   paraphrase.js      The offline paraphraser, and the model prompt for one
   overlap.js         How close a paraphrase is to its source. Also runs in the browser
-  insights.js        The study table, and the prompt and parser for the cited answer
+  insights.js        The study table, the takeaway, and the prompt and parser for the cited answer
+  fulltext.js        Finds a free PDF safely and reads it into sections with page numbers
   sentences.js       Sentence splitting that survives "et al." and "0.62"
   env.js             Reads .env without needing a newer Node
 public/              The front end: one page, app.js for the rewriter, research.js for Research
 tools/
   build-standalone.js Inlines lib/ and public/ into humaniser.html
-test/                144 tests, run with npm test
+test/                158 tests, run with npm test
 ```
 
 `public/app.js` serves both builds. With a server it calls `/api`; in the single-file build it finds an injected bridge and calls the rules engine directly, so there is one front end rather than two copies drifting apart. A test fails if `humaniser.html` falls behind its sources.
@@ -293,7 +300,7 @@ There is no build step. No bundler, no transpiler, no framework. `public/app.js`
 
 ## Putting it online
 
-The app is a plain Node server with one dependency, a health check at `/healthz`, and every secret read from the environment. That deploys anywhere. Two routes are set up ready to go.
+The app is a plain Node server with two dependencies (the Anthropic SDK, and PDF.js for reading PDFs), a health check at `/healthz`, and every secret read from the environment. That deploys anywhere. Two routes are set up ready to go.
 
 ### Before you expose it: protect the key
 
@@ -354,7 +361,9 @@ The image sets `HOST=0.0.0.0` and `TRUST_PROXY=1`, runs as a non-root user, and 
 
 ### What is exposed
 
-Public: the pages, the offline engine, the scholarly search, the offline paraphraser, `/healthz`, and `/api/status`, which reports only whether a key and a code exist. Behind the access code: model rewriting, model paraphrasing and the cited answer, the routes that cost money. Never sent to the browser under any circumstances: the API key and the access code, which a test asserts on every route.
+Public: the pages, the offline engine, the scholarly search, full-text reading, the offline paraphraser, `/healthz`, and `/api/status`, which reports only whether a key and a code exist. Behind the access code: model rewriting, model paraphrasing and the cited answer, the routes that cost money.
+
+The full-text reader fetches PDFs from addresses that come from the scholarly index, so it refuses any address that resolves to a private network (localhost, 10.x, 192.168.x, cloud metadata and the IPv6 equivalents), and checks every redirect hop the same way. Uploaded PDFs are read in memory and discarded. Never sent to the browser under any circumstances: the API key and the access code, which a test asserts on every route.
 
 ## Development
 

@@ -231,7 +231,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 }
 
 .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-a.ghost-btn {
+a.ghost-btn, label.ghost-btn {
   border: 1px solid var(--hairline);
   color: var(--ink-2);
   padding: 5px 10px;
@@ -239,7 +239,7 @@ a.ghost-btn {
   border-radius: var(--radius-sm);
   text-decoration: none;
 }
-a.ghost-btn:hover { background: var(--surface-sunk); }
+a.ghost-btn:hover, label.ghost-btn:hover { background: var(--surface-sunk); }
 .actions .ghost.on { background: var(--accent-wash); border-color: var(--accent); color: var(--ink); }
 
 .connected {
@@ -527,3 +527,72 @@ table.studies tr:last-child td { border-bottom: 0; }
 .stance.possibly { background: var(--warn-wash); color: var(--warn); }
 .stance.no { background: var(--over-wash); color: var(--over); }
 .stance.unclear { background: var(--surface-sunk); color: var(--ink-muted); }
+
+/* ---------- key takeaway, search focus, full text ---------- */
+.answer-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.answer-controls .check-inline { margin: 0; }
+
+.takeaway {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-wash);
+  border-left: 4px solid var(--accent);
+}
+.takeaway-label {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.takeaway-label span { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--ink-muted); margin-left: 4px; font-size: 12px; }
+.takeaway-text { margin: 0; font-size: 17px; line-height: 1.5; font-weight: 600; color: var(--ink); }
+.takeaway-src { margin: 6px 0 0; font-size: 12px; color: var(--ink-2); }
+
+.focus {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+}
+.focus-h { margin: 0 0 8px; font-size: 13px; font-weight: 700; }
+.focus-q { margin: 0 0 10px; font-size: 15px; font-style: italic; color: var(--ink); }
+.focus-roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin: 0 0 10px; }
+.focus-roles div { background: var(--surface-sunk); border-radius: var(--radius-sm); padding: 7px 10px; }
+.focus-roles dt, .focus-facts dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-muted); font-weight: 600; }
+.focus-roles dd { margin: 2px 0 0; font-size: 13px; color: var(--ink); }
+.focus-line, .focus-next, .focus-hint { margin: 0 0 8px; font-size: 13px; color: var(--ink-2); }
+.focus-hint { color: var(--ink-muted); }
+.focus-next { margin-top: 10px; }
+.focus-facts { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; align-items: baseline; }
+.focus-facts div { display: contents; }
+.focus-facts dd { margin: 0; font-size: 13px; color: var(--ink-2); }
+.chip-btn { cursor: pointer; }
+.chip-btn:hover { border-color: var(--accent); color: var(--ink); }
+
+.fulltext { margin-top: 10px; border-top: 1px solid var(--hairline); padding-top: 8px; font-size: 14px; color: var(--ink-2); }
+.ft-status { margin: 0 0 8px; font-size: 12px; color: var(--ink-muted); }
+.ft-section { border-bottom: 1px solid var(--hairline); padding: 4px 0; }
+.ft-section summary { cursor: pointer; font-weight: 600; color: var(--ink); padding: 4px 0; font-size: 14px; }
+.ft-para { margin: 6px 0 10px; line-height: 1.6; }
+.ft-page {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--ink-muted);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-right: 2px;
+  vertical-align: 1px;
+}
+.ft-upload { display: inline-block; cursor: pointer; margin-top: 4px; }
+.badge.ft { background: var(--accent-wash); color: var(--accent); border-color: transparent; }
+.t-source { display: inline-block; margin-top: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-muted); }
+.t-source.full { color: var(--accent); font-weight: 600; }
+
+@media (max-width: 600px) {
+  .focus-facts { grid-template-columns: 1fr; }
+  .takeaway-text { font-size: 16px; }
+}

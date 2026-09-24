@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A small local web server. No framework, so `npm install` only ever has to
-// fetch the Anthropic SDK, and the offline half of the app works even if that
-// fails.
+// fetch the Anthropic SDK and PDF.js, and the offline half of the app works
+// even if that fails: both are loaded on first use.
 
 // First, so that anything reading process.env at import time sees the .env file.
 import './lib/env.js';
@@ -18,8 +18,9 @@ import { extractDocxText } from './lib/docx.js';
 import { rewrite, hasKey, providerStatus, listModels } from './lib/provider.js';
 import { searchWorks, getWork, connectedWorks } from './lib/scholar.js';
 import {
-  SYNTHESIS_SYSTEM, MAX_SYNTHESIS_PAPERS, buildSynthesisMessage, parseSynthesis,
+  SYNTHESIS_SYSTEM, MAX_SYNTHESIS_PAPERS, buildSynthesisMessage, parseSynthesis, digest,
 } from './lib/insights.js';
+import { readPdf, fetchFullText } from './lib/fulltext.js';
 import {
   paraphraseOffline, PARAPHRASE_SYSTEM, buildParaphraseMessage, parseModelVariants,
 } from './lib/paraphrase.js';
@@ -87,6 +88,30 @@ function readBody(req) {
     req.on('error', reject);
   });
 }
+
+/** The raw bytes of a request, for uploads. Its own cap, far above the JSON one. */
+function readRaw(req, max) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    let aborted = false;
+    req.on('data', (chunk) => {
+      if (aborted) return;
+      size += chunk.length;
+      if (size > max) {
+        aborted = true;
+        reject(Object.assign(new Error(`That file is over ${Math.round(max / 1048576)} MB.`), { status: 413 }));
+        req.pause();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+const MAX_UPLOAD = 30 * 1024 * 1024;
 
 async function readJson(req) {
   const raw = await readBody(req);
@@ -266,8 +291,14 @@ const bool = (v, fallback) => (v === undefined || v === null || v === '' ? fallb
 /** A light copy of a work: what the model reads, and nothing the browser could inflate. */
 function paperForModel(w) {
   const text = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+  const urls = (v) => (Array.isArray(v) ? v.filter((u) => typeof u === 'string' && /^https?:\/\//.test(u)).slice(0, 4).map((u) => u.slice(0, 1000)) : []);
   return {
     id: text(w?.id, 80),
+    doi: text(w?.doi, 200),
+    oaUrl: urls([w?.oaUrl])[0] || null,
+    pdfUrls: urls(w?.pdfUrls),
+    landingUrls: urls(w?.landingUrls),
+    fulltext: text(w?.fulltext, 9000) || null,
     title: text(w?.title, 400),
     year: Number.isInteger(w?.year) ? w.year : null,
     venue: text(w?.venue, 200),
@@ -291,6 +322,21 @@ const researchRoutes = {
 
     const controller = new AbortController();
     res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+
+    // Read the free full texts the browser does not already have. Four at a
+    // time, and whatever is not in within 45 seconds stays on its abstract.
+    if (payload.readFullText) {
+      const todo = works.filter((w) => !w.fulltext && (w.pdfUrls.length || w.oaUrl || w.landingUrls.length));
+      const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(45_000)]);
+      let next = 0;
+      const worker = async () => {
+        while (next < todo.length && !deadline.aborted) {
+          const w = todo[next++];
+          try { w.fulltext = digest(await fetchFullText(w, deadline)); } catch { /* abstract it is */ }
+        }
+      };
+      await Promise.all([worker(), worker(), worker(), worker()]);
+    }
     let reply = '';
     try {
       for await (const event of rewrite({
@@ -325,6 +371,20 @@ const researchRoutes = {
       page: p.get('page'),
       perPage: p.get('perPage'),
     }));
+  },
+
+  // The free full text of one paper, found through the index and read here.
+  'GET /api/research/fulltext': async (req, res, url) => {
+    const work = await getWork(url.searchParams.get('id') || '');
+    const ft = await fetchFullText(work);
+    sendJson(res, 200, { id: work.id, ...ft });
+  },
+
+  // A PDF the researcher has access to. Read and returned, never kept.
+  'POST /api/research/fulltext/upload': async (req, res) => {
+    const bytes = await readRaw(req, MAX_UPLOAD);
+    if (!bytes.length) throw Object.assign(new Error('Send the PDF as the request body.'), { status: 400 });
+    sendJson(res, 200, { ...(await readPdf(bytes)), via: 'upload' });
   },
 
   'GET /api/research/work': async (req, res, url) => {

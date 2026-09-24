@@ -823,7 +823,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 }
 
 .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-a.ghost-btn {
+a.ghost-btn, label.ghost-btn {
   border: 1px solid var(--hairline);
   color: var(--ink-2);
   padding: 5px 10px;
@@ -831,7 +831,7 @@ a.ghost-btn {
   border-radius: var(--radius-sm);
   text-decoration: none;
 }
-a.ghost-btn:hover { background: var(--surface-sunk); }
+a.ghost-btn:hover, label.ghost-btn:hover { background: var(--surface-sunk); }
 .actions .ghost.on { background: var(--accent-wash); border-color: var(--accent); color: var(--ink); }
 
 .connected {
@@ -1120,6 +1120,75 @@ table.studies tr:last-child td { border-bottom: 0; }
 .stance.no { background: var(--over-wash); color: var(--over); }
 .stance.unclear { background: var(--surface-sunk); color: var(--ink-muted); }
 
+/* ---------- key takeaway, search focus, full text ---------- */
+.answer-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.answer-controls .check-inline { margin: 0; }
+
+.takeaway {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-wash);
+  border-left: 4px solid var(--accent);
+}
+.takeaway-label {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.takeaway-label span { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--ink-muted); margin-left: 4px; font-size: 12px; }
+.takeaway-text { margin: 0; font-size: 17px; line-height: 1.5; font-weight: 600; color: var(--ink); }
+.takeaway-src { margin: 6px 0 0; font-size: 12px; color: var(--ink-2); }
+
+.focus {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+}
+.focus-h { margin: 0 0 8px; font-size: 13px; font-weight: 700; }
+.focus-q { margin: 0 0 10px; font-size: 15px; font-style: italic; color: var(--ink); }
+.focus-roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin: 0 0 10px; }
+.focus-roles div { background: var(--surface-sunk); border-radius: var(--radius-sm); padding: 7px 10px; }
+.focus-roles dt, .focus-facts dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-muted); font-weight: 600; }
+.focus-roles dd { margin: 2px 0 0; font-size: 13px; color: var(--ink); }
+.focus-line, .focus-next, .focus-hint { margin: 0 0 8px; font-size: 13px; color: var(--ink-2); }
+.focus-hint { color: var(--ink-muted); }
+.focus-next { margin-top: 10px; }
+.focus-facts { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; align-items: baseline; }
+.focus-facts div { display: contents; }
+.focus-facts dd { margin: 0; font-size: 13px; color: var(--ink-2); }
+.chip-btn { cursor: pointer; }
+.chip-btn:hover { border-color: var(--accent); color: var(--ink); }
+
+.fulltext { margin-top: 10px; border-top: 1px solid var(--hairline); padding-top: 8px; font-size: 14px; color: var(--ink-2); }
+.ft-status { margin: 0 0 8px; font-size: 12px; color: var(--ink-muted); }
+.ft-section { border-bottom: 1px solid var(--hairline); padding: 4px 0; }
+.ft-section summary { cursor: pointer; font-weight: 600; color: var(--ink); padding: 4px 0; font-size: 14px; }
+.ft-para { margin: 6px 0 10px; line-height: 1.6; }
+.ft-page {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--ink-muted);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-right: 2px;
+  vertical-align: 1px;
+}
+.ft-upload { display: inline-block; cursor: pointer; margin-top: 4px; }
+.badge.ft { background: var(--accent-wash); color: var(--accent); border-color: transparent; }
+.t-source { display: inline-block; margin-top: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-muted); }
+.t-source.full { color: var(--accent); font-weight: 600; }
+
+@media (max-width: 600px) {
+  .focus-facts { grid-template-columns: 1fr; }
+  .takeaway-text { font-size: 16px; }
+}
+
 </style>
 </head>
 <body>
@@ -1221,8 +1290,13 @@ table.studies tr:last-child td { border-bottom: 0; }
           <button type="button" role="tab" class="seg on" data-rview="list" aria-selected="true">Papers</button>
           <button type="button" role="tab" class="seg" data-rview="table" aria-selected="false">Study table</button>
         </div>
-        <button type="button" class="primary small" id="answer-btn">✦ Answer from these papers</button>
+        <div class="answer-controls">
+          <label class="check-inline small" id="read-full-wrap" title="Fetches the free PDFs of the top papers and reads their methods, results and discussion, not just the abstract"><input type="checkbox" id="read-full" checked> Read free full texts</label>
+          <button type="button" class="primary small" id="answer-btn">✦ Answer from these papers</button>
+        </div>
       </div>
+      <section class="takeaway" id="takeaway" aria-label="Key takeaway" hidden></section>
+      <section class="focus" id="focus" aria-labelledby="focus-h" hidden></section>
       <p class="insight-note" id="answer-note" hidden></p>
       <div id="answer" class="answer" aria-live="polite" hidden></div>
     </section>
@@ -4763,7 +4837,7 @@ const SELECT = [
   'id', 'doi', 'title', 'display_name', 'publication_year', 'publication_date', 'type',
   'authorships', 'primary_location', 'best_oa_location', 'open_access', 'biblio',
   'cited_by_count', 'abstract_inverted_index', 'is_retracted', 'related_works',
-  'referenced_works_count', 'keywords', 'primary_topic', 'language',
+  'referenced_works_count', 'keywords', 'primary_topic', 'language', 'locations',
 ].join(',');
 
 /** The peer-review signal OpenAlex can give: journal articles and reviews with a DOI. */
@@ -4849,6 +4923,9 @@ function normaliseOpenAlex(w) {
   const biblio = w.biblio || {};
   const doi = bareDoi(w.doi);
   const oaUrl = w.best_oa_location?.pdf_url || w.best_oa_location?.landing_page_url || w.open_access?.oa_url || null;
+  // Every free copy the index knows of: publisher, repository, preprint server.
+  const oaLocations = [w.best_oa_location, ...(w.locations || []).filter((l) => l?.is_oa)].filter(Boolean);
+  const unique = (xs) => [...new Set(xs.filter((x) => typeof x === 'string' && /^https?:\/\//.test(x)))];
   const type = w.type || 'article';
   const venueType = source?.type || null;
   return {
@@ -4874,6 +4951,8 @@ function normaliseOpenAlex(w) {
     abstract: rebuildAbstract(w.abstract_inverted_index),
     openAccess: Boolean(w.open_access?.is_oa),
     oaUrl,
+    pdfUrls: unique(oaLocations.map((l) => l.pdf_url)).slice(0, 4),
+    landingUrls: unique(oaLocations.map((l) => l.landing_page_url)).slice(0, 3),
     url: doi ? `https://doi.org/${doi}` : (w.primary_location?.landing_page_url || w.id || null),
     retracted: Boolean(w.is_retracted),
     peerReviewed: ['article', 'review'].includes(type) && venueType === 'journal' && Boolean(doi),
@@ -4914,6 +4993,8 @@ function normaliseCrossref(m) {
     abstract: (m.abstract || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').replace(/^Abstract\s*/i, '').trim(),
     openAccess: false,
     oaUrl: null,
+    pdfUrls: (m.link || []).filter((l) => /pdf/i.test(l['content-type'] || '') && l['intended-application'] !== 'text-mining').map((l) => l.URL).slice(0, 2),
+    landingUrls: [],
     url: doi ? `https://doi.org/${doi}` : m.URL || null,
     retracted: false,
     peerReviewed: m.type === 'journal-article',
@@ -5149,39 +5230,64 @@ function keyFinding(abstract) {
 
 const MAX_SYNTHESIS_PAPERS = 12;
 
-const SYNTHESIS_SYSTEM = `You help a researcher understand what the literature says. You are given their question and a numbered set of paper abstracts. Work only from those abstracts.
+const SYNTHESIS_SYSTEM = `You help a researcher understand what the literature says. You are given their question and a numbered set of papers. For some papers you have the full text (methods, results, discussion); for the rest, only the abstract. Each paper is labelled with which. Work only from what you are given.
 
 Rules:
 - Every claim in your answer cites the papers it rests on with bracketed numbers, like [2] or [1, 4]. Never cite a number that was not given.
-- Do not use outside knowledge, do not invent findings, sample sizes or designs. If an abstract does not say, write null.
-- Weigh the evidence: say when findings conflict, when evidence is thin, observational only, or from a narrow population. Stronger designs (meta-analyses, randomised trials) count for more.
-- If the abstracts do not answer the question, say so plainly in the answer.
+- Do not use outside knowledge, do not invent findings, sample sizes or designs. If a paper does not say, write null.
+- Weigh the evidence: say when findings conflict, when evidence is thin, observational only, or from a narrow population. Stronger designs (meta-analyses, randomised trials) count for more. Prefer figures from full texts over abstracts.
+- If the papers do not answer the question, say so plainly.
 - Formal, plain academic English. No hype, no hedging beyond what the evidence needs.
 
 Stance: for a question that can be answered yes or no, give each paper's stance on it: "yes", "possibly", "no", or "unclear" (the paper does not address it). For an open question ("how", "what are"), use "unclear" for every paper and set consensus to "not-applicable".
 
+Focus: break the question down so the researcher can see exactly what is being looked for. Use the PICO roles where they fit (population, exposure or intervention, comparison, outcome); for questions that are not about an effect, fill "topic" and "context" instead and leave the others null. "evidenceNeeded" says in one sentence what kind of study would settle the question. "nextSearches" gives two or three short, specific follow-up searches (a narrower population, a key mechanism, a gap these papers leave).
+
 Reply with one JSON object and nothing else, no markdown fences:
 {
+  "takeaway": "the single most important point, one sentence of at most 30 words, with [n] citations",
+  "focus": {
+    "question": "the question restated precisely",
+    "population": "string or null", "exposure": "string or null", "comparison": "string or null", "outcome": "string or null",
+    "topic": "string or null", "context": "string or null",
+    "evidenceNeeded": "one sentence",
+    "nextSearches": ["search 1", "search 2"]
+  },
   "answer": "3 to 5 sentences answering the question, with [n] citations",
   "consensus": "yes" | "mostly-yes" | "mixed" | "mostly-no" | "no" | "not-applicable" | "insufficient",
   "papers": [
-    { "n": 1, "stance": "yes" | "possibly" | "no" | "unclear", "finding": "the paper's main finding relevant to the question, at most 25 words", "design": "study design or null", "population": "who or what was studied, or null", "sample": "sample size as stated, or null" }
+    { "n": 1, "stance": "yes" | "possibly" | "no" | "unclear", "finding": "the paper's main finding relevant to the question, at most 25 words", "design": "study design or null", "population": "who or what was studied, or null", "sample": "sample size as stated, or null", "limitation": "the main limitation the paper states, at most 15 words, or null" }
   ]
 }`;
 
-/** The user turn: the question, then the numbered abstracts. */
+/** The user turn: the question, then the numbered papers, full text where there is one. */
 function buildSynthesisMessage(question, works) {
   const papers = works.slice(0, MAX_SYNTHESIS_PAPERS).map((w, i) => {
     const who = (w.authors || []).slice(0, 3).map((a) => a.family || a.name).join(', ') || 'Unknown';
-    const abstract = String(w.abstract || '(no abstract available)').slice(0, 1800);
-    return `[${i + 1}] ${who} (${w.year || 'n.d.'}). ${w.title}${w.venue ? `. ${w.venue}` : ''}.\n${abstract}`;
+    const head = `[${i + 1}] ${who} (${w.year || 'n.d.'}). ${w.title}${w.venue ? `. ${w.venue}` : ''}.`;
+    if (w.fulltext) return `${head}\n(FULL TEXT, condensed)\n${String(w.fulltext).slice(0, 9000)}`;
+    return `${head}\n(ABSTRACT ONLY)\n${String(w.abstract || '(no abstract available)').slice(0, 1800)}`;
   });
   return `Question: ${String(question).trim()}\n\nPapers:\n\n${papers.join('\n\n')}`;
 }
 
 const STANCES = ['yes', 'possibly', 'no', 'unclear'];
 const CONSENSUS = ['yes', 'mostly-yes', 'mixed', 'mostly-no', 'no', 'not-applicable', 'insufficient'];
+const FOCUS_ROLES = ['population', 'exposure', 'comparison', 'outcome', 'topic', 'context'];
 const str = (v, max = 300) => (typeof v === 'string' && v.trim() && v.trim().toLowerCase() !== 'null' ? v.trim().slice(0, max) : null);
+
+/** Keeps [n] markers that point at a paper that was given; drops the rest. */
+function keepValidCitations(text, count) {
+  return text
+    .replace(/\[([\d,\s–-]+)\]/g, (m, inner) => {
+      const kept = inner.split(/\s*,\s*/).filter((x) => {
+        const [a, b] = x.split(/[–-]/).map(Number);
+        return a >= 1 && a <= count && (!b || (b >= a && b <= count));
+      });
+      return kept.length ? `[${kept.join(', ')}]` : '';
+    })
+    .replace(/\s+([.,;])/g, '$1');
+}
 
 /**
  * Reads the model's JSON, tolerating fences or a stray sentence around it, and
@@ -5200,15 +5306,16 @@ function parseSynthesis(reply, works) {
     throw Object.assign(new Error('The model returned a malformed answer. Try again.'), { status: 502 });
   }
   const count = Math.min(works.length, MAX_SYNTHESIS_PAPERS);
-  const answer = (str(data.answer, 3000) || 'No answer was returned.')
-    .replace(/\[([\d,\s–-]+)\]/g, (m, inner) => {
-      const kept = inner.split(/\s*,\s*/).filter((x) => {
-        const [a, b] = x.split(/[–-]/).map(Number);
-        return a >= 1 && a <= count && (!b || (b >= a && b <= count));
-      });
-      return kept.length ? `[${kept.join(', ')}]` : '';
-    })
-    .replace(/\s+([.,;])/g, '$1');
+  const answer = keepValidCitations(str(data.answer, 3000) || 'No answer was returned.', count);
+  const takeaway = str(data.takeaway, 400);
+
+  const f = data.focus && typeof data.focus === 'object' ? data.focus : {};
+  const focus = {
+    question: str(f.question, 400),
+    evidenceNeeded: str(f.evidenceNeeded, 400),
+    nextSearches: (Array.isArray(f.nextSearches) ? f.nextSearches : []).map((q) => str(q, 160)).filter(Boolean).slice(0, 3),
+  };
+  for (const role of FOCUS_ROLES) focus[role] = str(f[role], 200);
 
   const papers = [];
   for (const p of Array.isArray(data.papers) ? data.papers : []) {
@@ -5222,17 +5329,61 @@ function parseSynthesis(reply, works) {
       design: str(p.design, 80),
       population: str(p.population, 120),
       sample: str(p.sample, 60),
+      limitation: str(p.limitation, 160),
+      fullText: Boolean(works[n - 1].fulltext),
     });
   }
   const meter = { yes: 0, possibly: 0, no: 0, unclear: 0 };
   papers.forEach((p) => { meter[p.stance] += 1; });
   return {
+    takeaway: takeaway ? keepValidCitations(takeaway, count) : null,
+    focus,
     answer,
     consensus: CONSENSUS.includes(data.consensus) ? data.consensus : 'insufficient',
     papers,
     meter,
     ids: works.slice(0, count).map((w) => w.id),
+    fullTextIds: works.slice(0, count).filter((w) => w.fulltext).map((w) => w.id),
   };
+}
+
+/**
+ * Without a model: the finding from the strongest study in the results, so
+ * the takeaway box still says something true. Strongest means best design,
+ * then most cited. Returns null when no abstract states a finding.
+ */
+function strongestFinding(works) {
+  let best = null;
+  for (const work of works || []) {
+    const study = extractStudy(work);
+    if (!study.finding) continue;
+    const better = !best
+      || study.designRank < best.study.designRank
+      || (study.designRank === best.study.designRank && (work.citedBy || 0) > (best.work.citedBy || 0));
+    if (better) best = { work, study };
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------- full text
+
+/** The whole text, section by section, for pattern matching. */
+const plainText = (ft) => ft.sections.map((s) => s.paragraphs.map((p) => p.text).join(' ')).join('\n');
+
+/**
+ * What the model reads for a full-text paper: the parts that carry the
+ * evidence, trimmed to a budget so twelve papers still fit in one request.
+ */
+function digest(ft, budget = 7000) {
+  const shares = { abstract: 0.1, methods: 0.25, results: 0.3, discussion: 0.15, limitations: 0.08, conclusion: 0.12 };
+  const out = [];
+  for (const [kind, share] of Object.entries(shares)) {
+    const text = ft.sections.filter((s) => s.kind === kind).map((s) => s.paragraphs.map((p) => p.text).join(' ')).join(' ');
+    if (text) out.push(`${kind.toUpperCase()}: ${text.slice(0, Math.round(budget * share))}`);
+  }
+  // Papers with unusual headings: fall back to the text in order.
+  if (out.join('').length < budget * 0.3) return plainText(ft).slice(0, budget);
+  return out.join('\n');
 }
 
 /** A CSV of the study table, for a spreadsheet or a systematic-review log. */
@@ -5252,7 +5403,7 @@ function studiesCsv(rows) {
   return [head.join(','), ...lines].join('\n');
 }
 
-return { DESIGNS, extractStudy, keyFinding, MAX_SYNTHESIS_PAPERS, SYNTHESIS_SYSTEM, buildSynthesisMessage, parseSynthesis, studiesCsv };
+return { DESIGNS, extractStudy, keyFinding, MAX_SYNTHESIS_PAPERS, SYNTHESIS_SYSTEM, buildSynthesisMessage, parseSynthesis, strongestFinding, plainText, digest, studiesCsv };
 })();
 
 // ---- lib/paraphrase.js ----
@@ -6487,7 +6638,7 @@ loadStatus();
 const { STYLES, inText, reference, referenceList, bibtex, ris, toPlain } = NS_cite;
 const { overlap } = NS_overlap;
 const { splitSentences } = NS_sentences;
-const { extractStudy, studiesCsv, MAX_SYNTHESIS_PAPERS } = NS_insights;
+const { extractStudy, keyFinding, strongestFinding, studiesCsv, digest, MAX_SYNTHESIS_PAPERS } = NS_insights;
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -6577,12 +6728,20 @@ const backend = {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ text, strength: 'light', constraints: ACADEMIC }),
   }).then((r) => ({ text: r.text }))),
-  synthesize: (question, works) => api('/api/research/synthesize', {
+  synthesize: (question, works, readFullText) => api('/api/research/synthesize', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-access-code': accessCode() },
-    body: JSON.stringify({ question, works }),
+    body: JSON.stringify({ question, works, readFullText }),
+  }),
+  fulltext: (id) => api(`/api/research/fulltext?${new URLSearchParams({ id })}`),
+  upload: (file) => api('/api/research/fulltext/upload', {
+    method: 'POST', headers: { 'content-type': 'application/pdf' }, body: file,
   }),
 };
+
+// Full texts read this session, by work id. Kept in memory only: a paper's
+// whole text is too big for browser storage, and cheap to fetch again.
+const fullTexts = new Map();
 
 const ACADEMIC = { noContractions: true, noFirstPerson: true, noSecondPerson: true, formalRegister: true };
 
@@ -6870,9 +7029,7 @@ function showSearch(appended = null) {
   ui.back.hidden = true;
   ui.title.innerHTML = `<strong>${nf.format(s.total)}</strong> ${s.total === 1 ? 'paper' : 'papers'} · read as ${esc(MODE_WORDS[s.interpreted.mode] || s.interpreted.mode)}`;
   const terms = s.interpreted.mode === 'keywords' ? [] : s.interpreted.terms;
-  ui.interpreted.innerHTML = terms.length
-    ? `<span class="chip">Searching for</span>${terms.map((t) => `<span class="chip"><strong>${esc(t)}</strong></span>`).join('')}`
-    : '';
+  ui.interpreted.innerHTML = '';
   const list = appended || s.results;
   const html = list.map((w) => workCard(w, terms)).join('');
   if (appended) ui.results.insertAdjacentHTML('beforeend', html);
@@ -6881,6 +7038,7 @@ function showSearch(appended = null) {
   $('insight').hidden = !s.results.length;
   $('answer-btn').innerHTML = s.interpreted.mode === 'keywords' ? '✦ Summarise these papers' : '✦ Answer from these papers';
   renderAnswer();
+  renderInsight();
   setResultView(resultView);
 }
 
@@ -6909,11 +7067,13 @@ function workCard(w, terms = []) {
     <p class="work-meta">${esc(authorsShort(w))} · ${w.venue ? `<span class="venue">${esc(w.venue)}</span> · ` : ''}${esc(w.year || 'n.d.')}</p>
     <div class="badges">${badges(w)}</div>
     ${evidence}
-    <div class="abstract" hidden></div>
+    <div class="abstract reader" hidden></div>
+    <div class="fulltext reader" hidden></div>
     <div class="actions">
       <button type="button" class="ghost${saved ? ' on' : ''}" data-act="save" aria-pressed="${saved}">${saved ? '★ Saved' : '☆ Save'}</button>
       <button type="button" class="ghost" data-act="cite">Cite</button>
       <button type="button" class="ghost" data-act="abstract" aria-expanded="false" ${w.abstract ? '' : 'disabled title="No abstract in the index"'}>Abstract &amp; paraphrase</button>
+      ${bridge ? '' : `<button type="button" class="ghost${fullTexts.has(w.id) ? ' on' : ''}" data-act="fulltext" aria-expanded="false" title="${w.openAccess ? 'Read the free PDF' : 'No free copy listed: upload the PDF if you have access'}">${fullTexts.has(w.id) ? '📄 Full text' : w.openAccess ? 'Read full text' : 'Full text (upload)'}</button>`}
       ${canConnect ? `<button type="button" class="ghost" data-act="related">Related</button>
       <button type="button" class="ghost" data-act="citing">Cited by</button>
       <button type="button" class="ghost" data-act="references">References</button>` : ''}
@@ -6957,11 +7117,15 @@ function toggleAbstract(card, w, btn) {
 }
 
 function sentenceMenu(card, w, span) {
-  const box = card.querySelector('.abstract');
+  const box = span.closest('.reader');
   const menu = box.querySelector('.sentence-menu');
-  box.querySelectorAll('.sentence.active').forEach((s) => s.classList.remove('active'));
+  card.querySelectorAll('.sentence.active').forEach((s) => s.classList.remove('active'));
+  card.querySelectorAll('.sentence-menu').forEach((m) => { if (m !== menu) m.hidden = true; });
   span.classList.add('active');
   const text = span.textContent;
+  // A sentence from the full text knows its page, so its citation can too.
+  const page = span.dataset.page || '';
+  const context = box.classList.contains('fulltext') ? span.closest('.ft-para')?.textContent || '' : w.abstract;
   menu.hidden = false;
   menu.innerHTML = `
     <button type="button" class="primary small" data-s="paraphrase">Paraphrase</button>
@@ -6972,8 +7136,8 @@ function sentenceMenu(card, w, span) {
   menu.onclick = async (e) => {
     const act = e.target.closest('[data-s]')?.dataset.s;
     if (!act) return;
-    if (act === 'paraphrase') openParaphrase(w, text, w.abstract);
-    if (act === 'copy') copy(quoteWithCitation(text, w, ''), 'Quote copied with its citation');
+    if (act === 'paraphrase') openParaphrase(w, text, context, page);
+    if (act === 'copy') copy(quoteWithCitation(text, w, page), 'Quote copied with its citation');
     if (act === 'find') {
       ui.q.value = text;
       ui.form.querySelector('input[value="sentence"]').checked = true;
@@ -6984,10 +7148,107 @@ function sentenceMenu(card, w, span) {
       const themeId = await pickTheme();
       if (!themeId) return;
       ensureSaved(w);
-      addFinding({ kind: 'quote', text, sourceId: w.id, themeId });
+      addFinding({ kind: 'quote', text, sourceId: w.id, page, themeId });
       syncSavedButtons();
     }
   };
+}
+
+// ---------------------------------------------------------------- full text
+
+/**
+ * PDF page 2 of a paper printed on pages 112–120 is page 113, and that is the
+ * number a citation wants. Falls back to the PDF page when the index has no
+ * numeric range or the PDF is longer than the range (a preprint, say).
+ */
+function printedPage(w, pdfPage) {
+  const m = String(w.pages || '').match(/^(\d+)\s*[–-]\s*(\d+)$/);
+  if (!m) return String(pdfPage);
+  const [first, last] = [Number(m[1]), Number(m[2])];
+  const page = first + Number(pdfPage) - 1;
+  return page <= last ? String(page) : String(pdfPage);
+}
+
+const OPEN_SECTIONS = new Set(['abstract', 'results', 'discussion', 'conclusion']);
+
+async function toggleFullText(card, w, btn) {
+  const box = card.querySelector('.fulltext');
+  const open = box.hidden;
+  box.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
+  btn.classList.toggle('on', open);
+  if (!open || box.dataset.ready) return;
+  if (fullTexts.has(w.id)) { renderFullText(box, w); return; }
+  if (!w.openAccess) { renderUploadOnly(box, w, 'The index lists no free copy of this paper.'); return; }
+  box.innerHTML = '<p class="ft-status">Finding and reading the free PDF… this can take up to half a minute.</p>';
+  try {
+    fullTexts.set(w.id, await backend.fulltext(w.id));
+    renderFullText(box, w);
+    markFullText(card, w);
+  } catch (error) {
+    renderUploadOnly(box, w, error.message);
+  }
+}
+
+function uploadControl(w) {
+  return `<label class="ghost-btn ft-upload">Upload the PDF<input type="file" accept="application/pdf,.pdf" data-upload="${esc(w.id)}" hidden></label>`;
+}
+
+function renderUploadOnly(box, w, message) {
+  box.innerHTML = `<p class="ft-status">${esc(message)}</p>
+    <p class="panel-note">Got it through your library? Upload the PDF and it is read here: sections, page numbers, and a better study table and answer. The file is read and discarded, never stored.</p>
+    ${uploadControl(w)}`;
+}
+
+function markFullText(card, w) {
+  const btn = card.querySelector('[data-act="fulltext"]');
+  if (btn) btn.textContent = '📄 Full text';
+  if (!card.querySelector('.badge.ft')) card.querySelector('.badges')?.insertAdjacentHTML('beforeend', '<span class="badge ft">Full text read</span>');
+  if (resultView === 'table') renderTable();
+}
+
+function renderFullText(box, w) {
+  const ft = fullTexts.get(w.id);
+  box.dataset.ready = '1';
+  const source = ft.via === 'upload' ? 'your upload' : ft.source ? `<a href="${esc(ft.source)}" target="_blank" rel="noopener">the free copy</a>` : 'the free copy';
+  box.innerHTML = `
+    <p class="ft-status">Full text from ${source} · ${ft.pages} page${ft.pages === 1 ? '' : 's'}${ft.pagesRead < ft.pages ? ` (first ${ft.pagesRead} read)` : ''} · ${nf.format(ft.words)} words. Click a sentence to paraphrase or quote it: the page number comes with it.</p>
+    ${ft.sections.map((sec) => `
+      <details class="ft-section"${OPEN_SECTIONS.has(sec.kind) ? ' open' : ''}>
+        <summary>${esc(sec.title)}</summary>
+        ${sec.paragraphs.map((p) => {
+    const printed = printedPage(w, p.page);
+    return `<p class="ft-para"><span class="ft-page" title="${printed === String(p.page) ? `Page ${p.page} of the PDF` : `Printed page ${printed}, page ${p.page} of the PDF`}">p. ${printed}</span> ${splitSentences(p.text).map((t) => `<span class="sentence" tabindex="0" role="button" data-page="${printed}">${esc(t)}</span>`).join(' ')}</p>`;
+  }).join('')}
+      </details>`).join('')}
+    <div class="sentence-menu" hidden></div>
+    <p class="panel-note">Wrong or incomplete? ${uploadControl(w)}</p>`;
+}
+
+ui.results.addEventListener('change', async (e) => {
+  const input = e.target.closest('[data-upload]');
+  if (!input || !input.files[0]) return;
+  const card = input.closest('.work');
+  const w = workCache.get(input.dataset.upload);
+  const box = card.querySelector('.fulltext');
+  box.innerHTML = '<p class="ft-status">Reading your PDF…</p>';
+  try {
+    fullTexts.set(w.id, await backend.upload(input.files[0]));
+    renderFullText(box, w);
+    markFullText(card, w);
+  } catch (error) {
+    renderUploadOnly(box, w, error.message);
+  }
+});
+
+/** What the study table reads: methods text improves design and sample; the conclusion states the finding. */
+function studyFor(work) {
+  const ft = fullTexts.get(work.id);
+  if (!ft) return { ...extractStudy(work), source: 'abstract' };
+  const text = (kinds) => ft.sections.filter((x) => kinds.includes(x.kind)).map((x) => x.paragraphs.map((p) => p.text).join(' ')).join(' ');
+  const x = extractStudy({ ...work, abstract: `${work.abstract || ''} ${text(['methods'])}` });
+  const conclusion = text(['conclusion']) || text(['discussion']);
+  return { ...x, finding: (conclusion && keyFinding(conclusion)) || extractStudy(work).finding, source: 'full text' };
 }
 
 const CONNECT_LABEL = {
@@ -7066,6 +7327,7 @@ ui.results.addEventListener('click', (e) => {
   if (act === 'save') { if (isSaved(w.id)) unsaveWork(w.id); else saveWork(w); }
   if (act === 'cite') openCite(w);
   if (act === 'abstract') toggleAbstract(card, w, btn);
+  if (act === 'fulltext') toggleFullText(card, w, btn);
   if (['related', 'citing', 'references'].includes(act)) toggleConnected(card, w, act, btn);
 });
 
@@ -7145,11 +7407,11 @@ $('cite-page').addEventListener('input', renderCite);
 
 let para = null; // { work, context }
 
-function openParaphrase(w, text, context = '') {
+function openParaphrase(w, text, context = '', page = '') {
   para = { work: w, context };
   $('para-work').textContent = `${authorsShort(w)} (${w.year || 'n.d.'}). ${w.title}`;
   $('para-source').value = text;
-  $('para-page').value = '';
+  $('para-page').value = page;
   $('para-variants').innerHTML = '';
   $('para-status').textContent = '';
   $('para-status').classList.remove('error');
@@ -7756,7 +8018,7 @@ document.querySelectorAll('[data-rview]').forEach((b) => b.addEventListener('cli
 
 function tableRows() {
   return lastSearch.results.map((work, index) => {
-    const x = extractStudy(work);
+    const x = studyFor(work);
     const m = synthesis?.data.papers.find((p) => p.id === work.id);
     return {
       work,
@@ -7768,6 +8030,8 @@ function tableRows() {
       sampleSize: x.sampleSize,
       finding: m?.finding || x.finding,
       stance: m?.stance || null,
+      limitation: m?.limitation || null,
+      source: m?.fullText || x.source === 'full text' ? 'Full text' : 'Abstract',
       ai: Boolean(m),
     };
   });
@@ -7800,7 +8064,7 @@ function renderTable() {
         </select>
       </div>
       <button type="button" class="ghost" id="table-csv">Export CSV</button>
-      <p class="table-note">${synthesis ? '✦ marks rows read by the AI from the abstract. ' : ''}Read from abstracts, not full texts. Check anything you rely on.</p>
+      <p class="table-note">${synthesis ? '✦ marks cells the AI read. ' : ''}Each row says whether it came from the full text or the abstract. Open a paper's full text to improve its row. Check anything you rely on.</p>
     </div>
     <div class="table-wrap">
       <table class="studies">
@@ -7813,7 +8077,7 @@ function renderTable() {
             </td>
             <td>${cell(r.design)}${r.ai ? ' <span class="ai-mark" title="Read by the AI">✦</span>' : ''}</td>
             <td>${cell(r.sample)}${r.population && r.population !== r.sample ? `<span class="t-meta">${esc(r.population)}</span>` : ''}</td>
-            <td class="t-finding">${cell(r.finding)}</td>
+            <td class="t-finding">${cell(r.finding)}${r.limitation ? `<span class="t-meta">Limitation: ${esc(r.limitation)}</span>` : ''}<span class="t-source ${r.source === 'Full text' ? 'full' : ''}">${r.source}</span></td>
             ${withStance ? `<td>${r.stance ? `<span class="stance ${r.stance}">${STANCE_LABEL[r.stance]}</span>` : ''}</td>` : ''}
             <td><button type="button" class="ghost" data-mini-save="${esc(r.work.id)}" title="${isSaved(r.work.id) ? 'Saved' : 'Save to sources'}">${isSaved(r.work.id) ? '★' : '☆'}</button></td>
           </tr>`).join('')}
@@ -7878,12 +8142,12 @@ function renderAnswer() {
       </div>
       <p class="cmeter-legend">${['yes', 'possibly', 'no'].map((k) => `<span><i class="dot ${k}"></i>${STANCE_LABEL[k]} ${pct(d.meter[k])}%</span>`).join('')}</p>
     </div>` : (d.consensus === 'insufficient' ? `<p class="consensus"><span class="consensus-label">${CONSENSUS_LABEL.insufficient}</span></p>` : '');
-  const answerHtml = esc(d.answer).replace(/\[([\d,\s]+)\]/g, (m, inner) => `<sup class="refs">${inner.split(',').map((n) => `<button type="button" class="ref" data-ref="${n.trim()}" title="${esc(workCache.get(d.ids[Number(n) - 1])?.title || '')}">${n.trim()}</button>`).join('')}</sup>`);
+  const answerHtml = refsHtml(d.answer, d.ids);
   box.hidden = false;
   box.innerHTML = `
     ${meter}
     <p class="answer-text">${answerHtml}</p>
-    <p class="answer-foot">Written by ${esc(status.model.label || 'the AI')} from the abstracts of ${d.ids.length} papers, not their full texts. Follow each citation before you rely on it.</p>
+    <p class="answer-foot">Written by ${esc(status.model.label || 'the AI')} from ${d.fullTextIds.length ? `the full texts of ${d.fullTextIds.length} and the abstracts of ${d.ids.length - d.fullTextIds.length}` : `the abstracts of ${d.ids.length}`} papers. Follow each citation before you rely on it.</p>
     <div class="row-actions">
       <button type="button" class="ghost" data-ans="copy">Copy with citations</button>
       <button type="button" class="ghost" data-ans="save">Save as a finding</button>
@@ -7891,19 +8155,25 @@ function renderAnswer() {
     </div>`;
 }
 
+/** Scrolls to a paper in the list and flashes it. */
+function showPaper(id) {
+  setResultView('list');
+  const card = ui.results.querySelector(`.work[data-id="${CSS.escape(id)}"]`);
+  if (card) {
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 1600);
+  }
+}
+
+/** "[1, 3]" in AI text becomes small buttons that jump to the paper. */
+function refsHtml(text, ids) {
+  return esc(text).replace(/\[([\d,\s]+)\]/g, (m, inner) => `<sup class="refs">${inner.split(',').map((n) => `<button type="button" class="ref" data-ref="${n.trim()}" title="${esc(workCache.get(ids[Number(n) - 1])?.title || '')}">${n.trim()}</button>`).join('')}</sup>`);
+}
+
 $('answer').addEventListener('click', async (e) => {
   const ref = e.target.closest('[data-ref]');
-  if (ref) {
-    const id = synthesis.data.ids[Number(ref.dataset.ref) - 1];
-    setResultView('list');
-    const card = ui.results.querySelector(`.work[data-id="${CSS.escape(id)}"]`);
-    if (card) {
-      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      card.classList.add('flash');
-      setTimeout(() => card.classList.remove('flash'), 1600);
-    }
-    return;
-  }
+  if (ref) { showPaper(synthesis.data.ids[Number(ref.dataset.ref) - 1]); return; }
   const act = e.target.closest('[data-ans]')?.dataset.ans;
   if (act === 'table') setResultView('table');
   if (act === 'copy') copy(answerWithCitations().text, 'Answer copied with citations');
@@ -7932,21 +8202,104 @@ $('answer-btn').addEventListener('click', async () => {
   const btn = $('answer-btn');
   btn.disabled = true;
   $('answer').hidden = false;
-  $('answer').innerHTML = `<p class="answer-loading">Reading ${works.length} abstracts…</p>`;
+  $('answer').innerHTML = `<p class="answer-loading">${$('read-full').checked
+    ? `Fetching the free full texts and reading ${works.length} papers… up to a minute.`
+    : `Reading ${works.length} papers…`}</p>`;
   const question = lastSearch.query;
   try {
+    const readFull = $('read-full').checked;
     const data = await backend.synthesize(question, works.map((w) => ({
       id: w.id, title: w.title, year: w.year, venue: w.venue, abstract: w.abstract, authors: w.authors,
-    })));
+      doi: w.doi, oaUrl: w.oaUrl, pdfUrls: w.pdfUrls, landingUrls: w.landingUrls,
+      fulltext: fullTexts.has(w.id) ? digest(fullTexts.get(w.id)) : undefined,
+    })), readFull);
     if (lastSearch.query !== question) return; // a new search came in meanwhile
     synthesis = { data, question };
     renderAnswer();
+    renderInsight();
     if (resultView === 'table') renderTable();
   } catch (error) {
     $('answer').innerHTML = `<p class="answer-error">${esc(error.message)}</p>`;
   } finally {
     btn.disabled = false;
   }
+});
+
+// ---------------------------------------------------------------- takeaway and focus
+
+const MODE_LABEL = { keywords: 'Keywords', question: 'A question', sentence: 'A claim to find evidence for', doi: 'A DOI lookup' };
+
+function filtersText(p) {
+  const bits = [p.peerReviewed === '0' ? 'all publication types' : 'peer-reviewed journal articles and reviews'];
+  if (p.openAccess === '1') bits.push('free to read');
+  if (p.fromYear || p.toYear) bits.push(`published ${p.fromYear || 'any time'}–${p.toYear || 'now'}`);
+  if (Number(p.minCitations) > 0) bits.push(`cited at least ${p.minCitations} times`);
+  bits.push('retractions excluded');
+  return bits.join(', ');
+}
+
+const SORT_LABEL = { relevance: 'best match first', cited: 'most cited first', newest: 'newest first' };
+
+function renderInsight() {
+  const s = lastSearch;
+  const take = $('takeaway');
+  const focus = $('focus');
+  if (!s || !s.results.length) { take.hidden = true; focus.hidden = true; return; }
+
+  // Key takeaway: the AI's, across the papers; otherwise the strongest study's own finding.
+  const ai = synthesis?.data.takeaway;
+  if (ai) {
+    take.innerHTML = `
+      <p class="takeaway-label">Key takeaway <span>across ${synthesis.data.ids.length} papers</span></p>
+      <p class="takeaway-text">${refsHtml(ai, synthesis.data.ids)}</p>`;
+  } else {
+    const best = strongestFinding(s.results);
+    take.innerHTML = best ? `
+      <p class="takeaway-label">Key takeaway <span>the strongest evidence in these results</span></p>
+      <p class="takeaway-text">${esc(best.study.finding)}</p>
+      <p class="takeaway-src">From the ${esc((best.study.design || 'study').toLowerCase())} by ${esc(authorsShort(best.work))} (${esc(best.work.year || 'n.d.')}), cited ${nf.format(best.work.citedBy || 0)} times. <button type="button" class="linkish" data-show="${esc(best.work.id)}">Show it</button>${status.model?.keyInEnv ? ' · Press Answer for a takeaway across all the papers.' : ''}</p>`
+      : '<p class="takeaway-label">Key takeaway</p><p class="takeaway-src">None of these abstracts states a finding clearly enough to pull out.</p>';
+  }
+  take.hidden = false;
+
+  // What we are searching for: what the search engine was given, and, after
+  // an answer, what the question is actually asking.
+  const f = synthesis?.data.focus;
+  const roles = f ? [
+    ['Population', f.population], ['Exposure or intervention', f.exposure], ['Compared with', f.comparison],
+    ['Outcome', f.outcome], ['Topic', f.topic], ['Context', f.context],
+  ].filter(([, v]) => v) : [];
+  const terms = s.interpreted.mode === 'keywords' ? [s.query] : s.interpreted.terms;
+  focus.innerHTML = `
+    <h3 id="focus-h" class="focus-h">What we're searching for</h3>
+    ${f?.question ? `<p class="focus-q">${esc(f.question)}</p>` : ''}
+    ${roles.length ? `<dl class="focus-roles">${roles.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''}
+    ${f?.evidenceNeeded ? `<p class="focus-line"><strong>Evidence that would settle it:</strong> ${esc(f.evidenceNeeded)}</p>` : ''}
+    <dl class="focus-facts">
+      <div><dt>Read as</dt><dd>${esc(MODE_LABEL[s.interpreted.mode] || s.interpreted.mode)}</dd></div>
+      <div><dt>Search terms</dt><dd class="chips">${terms.map((t) => `<span class="chip"><strong>${esc(t)}</strong></span>`).join('')}</dd></div>
+      <div><dt>Looking in</dt><dd>${esc(filtersText(s.params))}</dd></div>
+      <div><dt>Showing</dt><dd>${nf.format(s.results.length)} of ${nf.format(s.total)}, ${SORT_LABEL[s.params.sort] || 'best match first'}</dd></div>
+    </dl>
+    ${f?.nextSearches?.length ? `<p class="focus-next"><strong>Try next:</strong> ${f.nextSearches.map((q) => `<button type="button" class="chip chip-btn" data-next="${esc(q)}">${esc(q)}</button>`).join(' ')}</p>`
+      : (status.model?.keyInEnv && !synthesis ? '<p class="focus-hint">Press Answer to break the question into population, exposure and outcome, and get follow-up searches.</p>' : '')}`;
+  focus.hidden = false;
+}
+
+$('takeaway').addEventListener('click', (e) => {
+  const ref = e.target.closest('[data-ref]');
+  if (ref) showPaper(synthesis.data.ids[Number(ref.dataset.ref) - 1]);
+  const show = e.target.closest('[data-show]');
+  if (show) showPaper(show.dataset.show);
+});
+
+$('focus').addEventListener('click', (e) => {
+  const next = e.target.closest('[data-next]');
+  if (!next) return;
+  ui.q.value = next.dataset.next;
+  ui.form.querySelector('input[value="auto"]').checked = true;
+  runSearch();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
 // The rewriter asks for sources for a sentence in the draft.
@@ -7968,8 +8321,9 @@ document.addEventListener('humaniser:find', (e) => {
   } catch { /* fine */ }
 
   if (bridge) {
-    // One file, no server: no model, and nowhere to keep a key.
+    // One file, no server: no model, no PDF reader, and nowhere to keep a key.
     $('answer-btn').hidden = true;
+    $('read-full-wrap').hidden = true;
   } else {
     try {
       status = await api('/api/status');

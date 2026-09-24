@@ -24,3 +24,20 @@ globalThis.fetch = async (input, init) => {
   if (/cites:|cited_by:/.test(filter)) results = WORKS.slice(1, 3);
   return json({ meta: { count: results.length, page: Number(url.searchParams.get('page') || 1) }, results });
 };
+
+// Free PDFs: the fixture's open-access link serves test/fixtures/paper.pdf.
+// Name resolution is faked too, so the private-network guard sees a public address.
+import fs from 'node:fs';
+import { setNetwork } from '../../lib/fulltext.js';
+
+const PDF = fs.readFileSync(new URL('./paper.pdf', import.meta.url));
+setNetwork({
+  lookup: async () => [{ address: '93.184.216.34', family: 4 }],
+  fetch: async (input) => {
+    const url = String(input);
+    if (url === 'https://example.org/okafor2019.pdf') {
+      return new Response(PDF, { status: 200, headers: { 'content-type': 'application/pdf' } });
+    }
+    return new Response('not here', { status: 404, headers: { 'content-type': 'text/plain' } });
+  },
+});

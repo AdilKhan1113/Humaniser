@@ -7,7 +7,9 @@
 import { STYLES, inText, reference, referenceList, bibtex, ris, toPlain } from '/shared/cite.js';
 import { overlap } from '/shared/overlap.js';
 import { splitSentences } from '/shared/sentences.js';
-import { extractStudy, studiesCsv, MAX_SYNTHESIS_PAPERS } from '/shared/insights.js';
+import {
+  extractStudy, keyFinding, strongestFinding, studiesCsv, digest, MAX_SYNTHESIS_PAPERS,
+} from '/shared/insights.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -97,12 +99,20 @@ const backend = {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ text, strength: 'light', constraints: ACADEMIC }),
   }).then((r) => ({ text: r.text }))),
-  synthesize: (question, works) => api('/api/research/synthesize', {
+  synthesize: (question, works, readFullText) => api('/api/research/synthesize', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-access-code': accessCode() },
-    body: JSON.stringify({ question, works }),
+    body: JSON.stringify({ question, works, readFullText }),
+  }),
+  fulltext: (id) => api(`/api/research/fulltext?${new URLSearchParams({ id })}`),
+  upload: (file) => api('/api/research/fulltext/upload', {
+    method: 'POST', headers: { 'content-type': 'application/pdf' }, body: file,
   }),
 };
+
+// Full texts read this session, by work id. Kept in memory only: a paper's
+// whole text is too big for browser storage, and cheap to fetch again.
+const fullTexts = new Map();
 
 const ACADEMIC = { noContractions: true, noFirstPerson: true, noSecondPerson: true, formalRegister: true };
 
@@ -390,9 +400,7 @@ function showSearch(appended = null) {
   ui.back.hidden = true;
   ui.title.innerHTML = `<strong>${nf.format(s.total)}</strong> ${s.total === 1 ? 'paper' : 'papers'} · read as ${esc(MODE_WORDS[s.interpreted.mode] || s.interpreted.mode)}`;
   const terms = s.interpreted.mode === 'keywords' ? [] : s.interpreted.terms;
-  ui.interpreted.innerHTML = terms.length
-    ? `<span class="chip">Searching for</span>${terms.map((t) => `<span class="chip"><strong>${esc(t)}</strong></span>`).join('')}`
-    : '';
+  ui.interpreted.innerHTML = '';
   const list = appended || s.results;
   const html = list.map((w) => workCard(w, terms)).join('');
   if (appended) ui.results.insertAdjacentHTML('beforeend', html);
@@ -401,6 +409,7 @@ function showSearch(appended = null) {
   $('insight').hidden = !s.results.length;
   $('answer-btn').innerHTML = s.interpreted.mode === 'keywords' ? '✦ Summarise these papers' : '✦ Answer from these papers';
   renderAnswer();
+  renderInsight();
   setResultView(resultView);
 }
 
@@ -429,11 +438,13 @@ function workCard(w, terms = []) {
     <p class="work-meta">${esc(authorsShort(w))} · ${w.venue ? `<span class="venue">${esc(w.venue)}</span> · ` : ''}${esc(w.year || 'n.d.')}</p>
     <div class="badges">${badges(w)}</div>
     ${evidence}
-    <div class="abstract" hidden></div>
+    <div class="abstract reader" hidden></div>
+    <div class="fulltext reader" hidden></div>
     <div class="actions">
       <button type="button" class="ghost${saved ? ' on' : ''}" data-act="save" aria-pressed="${saved}">${saved ? '★ Saved' : '☆ Save'}</button>
       <button type="button" class="ghost" data-act="cite">Cite</button>
       <button type="button" class="ghost" data-act="abstract" aria-expanded="false" ${w.abstract ? '' : 'disabled title="No abstract in the index"'}>Abstract &amp; paraphrase</button>
+      ${bridge ? '' : `<button type="button" class="ghost${fullTexts.has(w.id) ? ' on' : ''}" data-act="fulltext" aria-expanded="false" title="${w.openAccess ? 'Read the free PDF' : 'No free copy listed: upload the PDF if you have access'}">${fullTexts.has(w.id) ? '📄 Full text' : w.openAccess ? 'Read full text' : 'Full text (upload)'}</button>`}
       ${canConnect ? `<button type="button" class="ghost" data-act="related">Related</button>
       <button type="button" class="ghost" data-act="citing">Cited by</button>
       <button type="button" class="ghost" data-act="references">References</button>` : ''}
@@ -477,11 +488,15 @@ function toggleAbstract(card, w, btn) {
 }
 
 function sentenceMenu(card, w, span) {
-  const box = card.querySelector('.abstract');
+  const box = span.closest('.reader');
   const menu = box.querySelector('.sentence-menu');
-  box.querySelectorAll('.sentence.active').forEach((s) => s.classList.remove('active'));
+  card.querySelectorAll('.sentence.active').forEach((s) => s.classList.remove('active'));
+  card.querySelectorAll('.sentence-menu').forEach((m) => { if (m !== menu) m.hidden = true; });
   span.classList.add('active');
   const text = span.textContent;
+  // A sentence from the full text knows its page, so its citation can too.
+  const page = span.dataset.page || '';
+  const context = box.classList.contains('fulltext') ? span.closest('.ft-para')?.textContent || '' : w.abstract;
   menu.hidden = false;
   menu.innerHTML = `
     <button type="button" class="primary small" data-s="paraphrase">Paraphrase</button>
@@ -492,8 +507,8 @@ function sentenceMenu(card, w, span) {
   menu.onclick = async (e) => {
     const act = e.target.closest('[data-s]')?.dataset.s;
     if (!act) return;
-    if (act === 'paraphrase') openParaphrase(w, text, w.abstract);
-    if (act === 'copy') copy(quoteWithCitation(text, w, ''), 'Quote copied with its citation');
+    if (act === 'paraphrase') openParaphrase(w, text, context, page);
+    if (act === 'copy') copy(quoteWithCitation(text, w, page), 'Quote copied with its citation');
     if (act === 'find') {
       ui.q.value = text;
       ui.form.querySelector('input[value="sentence"]').checked = true;
@@ -504,10 +519,107 @@ function sentenceMenu(card, w, span) {
       const themeId = await pickTheme();
       if (!themeId) return;
       ensureSaved(w);
-      addFinding({ kind: 'quote', text, sourceId: w.id, themeId });
+      addFinding({ kind: 'quote', text, sourceId: w.id, page, themeId });
       syncSavedButtons();
     }
   };
+}
+
+// ---------------------------------------------------------------- full text
+
+/**
+ * PDF page 2 of a paper printed on pages 112–120 is page 113, and that is the
+ * number a citation wants. Falls back to the PDF page when the index has no
+ * numeric range or the PDF is longer than the range (a preprint, say).
+ */
+function printedPage(w, pdfPage) {
+  const m = String(w.pages || '').match(/^(\d+)\s*[–-]\s*(\d+)$/);
+  if (!m) return String(pdfPage);
+  const [first, last] = [Number(m[1]), Number(m[2])];
+  const page = first + Number(pdfPage) - 1;
+  return page <= last ? String(page) : String(pdfPage);
+}
+
+const OPEN_SECTIONS = new Set(['abstract', 'results', 'discussion', 'conclusion']);
+
+async function toggleFullText(card, w, btn) {
+  const box = card.querySelector('.fulltext');
+  const open = box.hidden;
+  box.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
+  btn.classList.toggle('on', open);
+  if (!open || box.dataset.ready) return;
+  if (fullTexts.has(w.id)) { renderFullText(box, w); return; }
+  if (!w.openAccess) { renderUploadOnly(box, w, 'The index lists no free copy of this paper.'); return; }
+  box.innerHTML = '<p class="ft-status">Finding and reading the free PDF… this can take up to half a minute.</p>';
+  try {
+    fullTexts.set(w.id, await backend.fulltext(w.id));
+    renderFullText(box, w);
+    markFullText(card, w);
+  } catch (error) {
+    renderUploadOnly(box, w, error.message);
+  }
+}
+
+function uploadControl(w) {
+  return `<label class="ghost-btn ft-upload">Upload the PDF<input type="file" accept="application/pdf,.pdf" data-upload="${esc(w.id)}" hidden></label>`;
+}
+
+function renderUploadOnly(box, w, message) {
+  box.innerHTML = `<p class="ft-status">${esc(message)}</p>
+    <p class="panel-note">Got it through your library? Upload the PDF and it is read here: sections, page numbers, and a better study table and answer. The file is read and discarded, never stored.</p>
+    ${uploadControl(w)}`;
+}
+
+function markFullText(card, w) {
+  const btn = card.querySelector('[data-act="fulltext"]');
+  if (btn) btn.textContent = '📄 Full text';
+  if (!card.querySelector('.badge.ft')) card.querySelector('.badges')?.insertAdjacentHTML('beforeend', '<span class="badge ft">Full text read</span>');
+  if (resultView === 'table') renderTable();
+}
+
+function renderFullText(box, w) {
+  const ft = fullTexts.get(w.id);
+  box.dataset.ready = '1';
+  const source = ft.via === 'upload' ? 'your upload' : ft.source ? `<a href="${esc(ft.source)}" target="_blank" rel="noopener">the free copy</a>` : 'the free copy';
+  box.innerHTML = `
+    <p class="ft-status">Full text from ${source} · ${ft.pages} page${ft.pages === 1 ? '' : 's'}${ft.pagesRead < ft.pages ? ` (first ${ft.pagesRead} read)` : ''} · ${nf.format(ft.words)} words. Click a sentence to paraphrase or quote it: the page number comes with it.</p>
+    ${ft.sections.map((sec) => `
+      <details class="ft-section"${OPEN_SECTIONS.has(sec.kind) ? ' open' : ''}>
+        <summary>${esc(sec.title)}</summary>
+        ${sec.paragraphs.map((p) => {
+    const printed = printedPage(w, p.page);
+    return `<p class="ft-para"><span class="ft-page" title="${printed === String(p.page) ? `Page ${p.page} of the PDF` : `Printed page ${printed}, page ${p.page} of the PDF`}">p. ${printed}</span> ${splitSentences(p.text).map((t) => `<span class="sentence" tabindex="0" role="button" data-page="${printed}">${esc(t)}</span>`).join(' ')}</p>`;
+  }).join('')}
+      </details>`).join('')}
+    <div class="sentence-menu" hidden></div>
+    <p class="panel-note">Wrong or incomplete? ${uploadControl(w)}</p>`;
+}
+
+ui.results.addEventListener('change', async (e) => {
+  const input = e.target.closest('[data-upload]');
+  if (!input || !input.files[0]) return;
+  const card = input.closest('.work');
+  const w = workCache.get(input.dataset.upload);
+  const box = card.querySelector('.fulltext');
+  box.innerHTML = '<p class="ft-status">Reading your PDF…</p>';
+  try {
+    fullTexts.set(w.id, await backend.upload(input.files[0]));
+    renderFullText(box, w);
+    markFullText(card, w);
+  } catch (error) {
+    renderUploadOnly(box, w, error.message);
+  }
+});
+
+/** What the study table reads: methods text improves design and sample; the conclusion states the finding. */
+function studyFor(work) {
+  const ft = fullTexts.get(work.id);
+  if (!ft) return { ...extractStudy(work), source: 'abstract' };
+  const text = (kinds) => ft.sections.filter((x) => kinds.includes(x.kind)).map((x) => x.paragraphs.map((p) => p.text).join(' ')).join(' ');
+  const x = extractStudy({ ...work, abstract: `${work.abstract || ''} ${text(['methods'])}` });
+  const conclusion = text(['conclusion']) || text(['discussion']);
+  return { ...x, finding: (conclusion && keyFinding(conclusion)) || extractStudy(work).finding, source: 'full text' };
 }
 
 const CONNECT_LABEL = {
@@ -586,6 +698,7 @@ ui.results.addEventListener('click', (e) => {
   if (act === 'save') { if (isSaved(w.id)) unsaveWork(w.id); else saveWork(w); }
   if (act === 'cite') openCite(w);
   if (act === 'abstract') toggleAbstract(card, w, btn);
+  if (act === 'fulltext') toggleFullText(card, w, btn);
   if (['related', 'citing', 'references'].includes(act)) toggleConnected(card, w, act, btn);
 });
 
@@ -665,11 +778,11 @@ $('cite-page').addEventListener('input', renderCite);
 
 let para = null; // { work, context }
 
-function openParaphrase(w, text, context = '') {
+function openParaphrase(w, text, context = '', page = '') {
   para = { work: w, context };
   $('para-work').textContent = `${authorsShort(w)} (${w.year || 'n.d.'}). ${w.title}`;
   $('para-source').value = text;
-  $('para-page').value = '';
+  $('para-page').value = page;
   $('para-variants').innerHTML = '';
   $('para-status').textContent = '';
   $('para-status').classList.remove('error');
@@ -1276,7 +1389,7 @@ document.querySelectorAll('[data-rview]').forEach((b) => b.addEventListener('cli
 
 function tableRows() {
   return lastSearch.results.map((work, index) => {
-    const x = extractStudy(work);
+    const x = studyFor(work);
     const m = synthesis?.data.papers.find((p) => p.id === work.id);
     return {
       work,
@@ -1288,6 +1401,8 @@ function tableRows() {
       sampleSize: x.sampleSize,
       finding: m?.finding || x.finding,
       stance: m?.stance || null,
+      limitation: m?.limitation || null,
+      source: m?.fullText || x.source === 'full text' ? 'Full text' : 'Abstract',
       ai: Boolean(m),
     };
   });
@@ -1320,7 +1435,7 @@ function renderTable() {
         </select>
       </div>
       <button type="button" class="ghost" id="table-csv">Export CSV</button>
-      <p class="table-note">${synthesis ? '✦ marks rows read by the AI from the abstract. ' : ''}Read from abstracts, not full texts. Check anything you rely on.</p>
+      <p class="table-note">${synthesis ? '✦ marks cells the AI read. ' : ''}Each row says whether it came from the full text or the abstract. Open a paper's full text to improve its row. Check anything you rely on.</p>
     </div>
     <div class="table-wrap">
       <table class="studies">
@@ -1333,7 +1448,7 @@ function renderTable() {
             </td>
             <td>${cell(r.design)}${r.ai ? ' <span class="ai-mark" title="Read by the AI">✦</span>' : ''}</td>
             <td>${cell(r.sample)}${r.population && r.population !== r.sample ? `<span class="t-meta">${esc(r.population)}</span>` : ''}</td>
-            <td class="t-finding">${cell(r.finding)}</td>
+            <td class="t-finding">${cell(r.finding)}${r.limitation ? `<span class="t-meta">Limitation: ${esc(r.limitation)}</span>` : ''}<span class="t-source ${r.source === 'Full text' ? 'full' : ''}">${r.source}</span></td>
             ${withStance ? `<td>${r.stance ? `<span class="stance ${r.stance}">${STANCE_LABEL[r.stance]}</span>` : ''}</td>` : ''}
             <td><button type="button" class="ghost" data-mini-save="${esc(r.work.id)}" title="${isSaved(r.work.id) ? 'Saved' : 'Save to sources'}">${isSaved(r.work.id) ? '★' : '☆'}</button></td>
           </tr>`).join('')}
@@ -1398,12 +1513,12 @@ function renderAnswer() {
       </div>
       <p class="cmeter-legend">${['yes', 'possibly', 'no'].map((k) => `<span><i class="dot ${k}"></i>${STANCE_LABEL[k]} ${pct(d.meter[k])}%</span>`).join('')}</p>
     </div>` : (d.consensus === 'insufficient' ? `<p class="consensus"><span class="consensus-label">${CONSENSUS_LABEL.insufficient}</span></p>` : '');
-  const answerHtml = esc(d.answer).replace(/\[([\d,\s]+)\]/g, (m, inner) => `<sup class="refs">${inner.split(',').map((n) => `<button type="button" class="ref" data-ref="${n.trim()}" title="${esc(workCache.get(d.ids[Number(n) - 1])?.title || '')}">${n.trim()}</button>`).join('')}</sup>`);
+  const answerHtml = refsHtml(d.answer, d.ids);
   box.hidden = false;
   box.innerHTML = `
     ${meter}
     <p class="answer-text">${answerHtml}</p>
-    <p class="answer-foot">Written by ${esc(status.model.label || 'the AI')} from the abstracts of ${d.ids.length} papers, not their full texts. Follow each citation before you rely on it.</p>
+    <p class="answer-foot">Written by ${esc(status.model.label || 'the AI')} from ${d.fullTextIds.length ? `the full texts of ${d.fullTextIds.length} and the abstracts of ${d.ids.length - d.fullTextIds.length}` : `the abstracts of ${d.ids.length}`} papers. Follow each citation before you rely on it.</p>
     <div class="row-actions">
       <button type="button" class="ghost" data-ans="copy">Copy with citations</button>
       <button type="button" class="ghost" data-ans="save">Save as a finding</button>
@@ -1411,19 +1526,25 @@ function renderAnswer() {
     </div>`;
 }
 
+/** Scrolls to a paper in the list and flashes it. */
+function showPaper(id) {
+  setResultView('list');
+  const card = ui.results.querySelector(`.work[data-id="${CSS.escape(id)}"]`);
+  if (card) {
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 1600);
+  }
+}
+
+/** "[1, 3]" in AI text becomes small buttons that jump to the paper. */
+function refsHtml(text, ids) {
+  return esc(text).replace(/\[([\d,\s]+)\]/g, (m, inner) => `<sup class="refs">${inner.split(',').map((n) => `<button type="button" class="ref" data-ref="${n.trim()}" title="${esc(workCache.get(ids[Number(n) - 1])?.title || '')}">${n.trim()}</button>`).join('')}</sup>`);
+}
+
 $('answer').addEventListener('click', async (e) => {
   const ref = e.target.closest('[data-ref]');
-  if (ref) {
-    const id = synthesis.data.ids[Number(ref.dataset.ref) - 1];
-    setResultView('list');
-    const card = ui.results.querySelector(`.work[data-id="${CSS.escape(id)}"]`);
-    if (card) {
-      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      card.classList.add('flash');
-      setTimeout(() => card.classList.remove('flash'), 1600);
-    }
-    return;
-  }
+  if (ref) { showPaper(synthesis.data.ids[Number(ref.dataset.ref) - 1]); return; }
   const act = e.target.closest('[data-ans]')?.dataset.ans;
   if (act === 'table') setResultView('table');
   if (act === 'copy') copy(answerWithCitations().text, 'Answer copied with citations');
@@ -1452,21 +1573,104 @@ $('answer-btn').addEventListener('click', async () => {
   const btn = $('answer-btn');
   btn.disabled = true;
   $('answer').hidden = false;
-  $('answer').innerHTML = `<p class="answer-loading">Reading ${works.length} abstracts…</p>`;
+  $('answer').innerHTML = `<p class="answer-loading">${$('read-full').checked
+    ? `Fetching the free full texts and reading ${works.length} papers… up to a minute.`
+    : `Reading ${works.length} papers…`}</p>`;
   const question = lastSearch.query;
   try {
+    const readFull = $('read-full').checked;
     const data = await backend.synthesize(question, works.map((w) => ({
       id: w.id, title: w.title, year: w.year, venue: w.venue, abstract: w.abstract, authors: w.authors,
-    })));
+      doi: w.doi, oaUrl: w.oaUrl, pdfUrls: w.pdfUrls, landingUrls: w.landingUrls,
+      fulltext: fullTexts.has(w.id) ? digest(fullTexts.get(w.id)) : undefined,
+    })), readFull);
     if (lastSearch.query !== question) return; // a new search came in meanwhile
     synthesis = { data, question };
     renderAnswer();
+    renderInsight();
     if (resultView === 'table') renderTable();
   } catch (error) {
     $('answer').innerHTML = `<p class="answer-error">${esc(error.message)}</p>`;
   } finally {
     btn.disabled = false;
   }
+});
+
+// ---------------------------------------------------------------- takeaway and focus
+
+const MODE_LABEL = { keywords: 'Keywords', question: 'A question', sentence: 'A claim to find evidence for', doi: 'A DOI lookup' };
+
+function filtersText(p) {
+  const bits = [p.peerReviewed === '0' ? 'all publication types' : 'peer-reviewed journal articles and reviews'];
+  if (p.openAccess === '1') bits.push('free to read');
+  if (p.fromYear || p.toYear) bits.push(`published ${p.fromYear || 'any time'}–${p.toYear || 'now'}`);
+  if (Number(p.minCitations) > 0) bits.push(`cited at least ${p.minCitations} times`);
+  bits.push('retractions excluded');
+  return bits.join(', ');
+}
+
+const SORT_LABEL = { relevance: 'best match first', cited: 'most cited first', newest: 'newest first' };
+
+function renderInsight() {
+  const s = lastSearch;
+  const take = $('takeaway');
+  const focus = $('focus');
+  if (!s || !s.results.length) { take.hidden = true; focus.hidden = true; return; }
+
+  // Key takeaway: the AI's, across the papers; otherwise the strongest study's own finding.
+  const ai = synthesis?.data.takeaway;
+  if (ai) {
+    take.innerHTML = `
+      <p class="takeaway-label">Key takeaway <span>across ${synthesis.data.ids.length} papers</span></p>
+      <p class="takeaway-text">${refsHtml(ai, synthesis.data.ids)}</p>`;
+  } else {
+    const best = strongestFinding(s.results);
+    take.innerHTML = best ? `
+      <p class="takeaway-label">Key takeaway <span>the strongest evidence in these results</span></p>
+      <p class="takeaway-text">${esc(best.study.finding)}</p>
+      <p class="takeaway-src">From the ${esc((best.study.design || 'study').toLowerCase())} by ${esc(authorsShort(best.work))} (${esc(best.work.year || 'n.d.')}), cited ${nf.format(best.work.citedBy || 0)} times. <button type="button" class="linkish" data-show="${esc(best.work.id)}">Show it</button>${status.model?.keyInEnv ? ' · Press Answer for a takeaway across all the papers.' : ''}</p>`
+      : '<p class="takeaway-label">Key takeaway</p><p class="takeaway-src">None of these abstracts states a finding clearly enough to pull out.</p>';
+  }
+  take.hidden = false;
+
+  // What we are searching for: what the search engine was given, and, after
+  // an answer, what the question is actually asking.
+  const f = synthesis?.data.focus;
+  const roles = f ? [
+    ['Population', f.population], ['Exposure or intervention', f.exposure], ['Compared with', f.comparison],
+    ['Outcome', f.outcome], ['Topic', f.topic], ['Context', f.context],
+  ].filter(([, v]) => v) : [];
+  const terms = s.interpreted.mode === 'keywords' ? [s.query] : s.interpreted.terms;
+  focus.innerHTML = `
+    <h3 id="focus-h" class="focus-h">What we're searching for</h3>
+    ${f?.question ? `<p class="focus-q">${esc(f.question)}</p>` : ''}
+    ${roles.length ? `<dl class="focus-roles">${roles.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''}
+    ${f?.evidenceNeeded ? `<p class="focus-line"><strong>Evidence that would settle it:</strong> ${esc(f.evidenceNeeded)}</p>` : ''}
+    <dl class="focus-facts">
+      <div><dt>Read as</dt><dd>${esc(MODE_LABEL[s.interpreted.mode] || s.interpreted.mode)}</dd></div>
+      <div><dt>Search terms</dt><dd class="chips">${terms.map((t) => `<span class="chip"><strong>${esc(t)}</strong></span>`).join('')}</dd></div>
+      <div><dt>Looking in</dt><dd>${esc(filtersText(s.params))}</dd></div>
+      <div><dt>Showing</dt><dd>${nf.format(s.results.length)} of ${nf.format(s.total)}, ${SORT_LABEL[s.params.sort] || 'best match first'}</dd></div>
+    </dl>
+    ${f?.nextSearches?.length ? `<p class="focus-next"><strong>Try next:</strong> ${f.nextSearches.map((q) => `<button type="button" class="chip chip-btn" data-next="${esc(q)}">${esc(q)}</button>`).join(' ')}</p>`
+      : (status.model?.keyInEnv && !synthesis ? '<p class="focus-hint">Press Answer to break the question into population, exposure and outcome, and get follow-up searches.</p>' : '')}`;
+  focus.hidden = false;
+}
+
+$('takeaway').addEventListener('click', (e) => {
+  const ref = e.target.closest('[data-ref]');
+  if (ref) showPaper(synthesis.data.ids[Number(ref.dataset.ref) - 1]);
+  const show = e.target.closest('[data-show]');
+  if (show) showPaper(show.dataset.show);
+});
+
+$('focus').addEventListener('click', (e) => {
+  const next = e.target.closest('[data-next]');
+  if (!next) return;
+  ui.q.value = next.dataset.next;
+  ui.form.querySelector('input[value="auto"]').checked = true;
+  runSearch();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
 // The rewriter asks for sources for a sentence in the draft.
@@ -1488,8 +1692,9 @@ document.addEventListener('humaniser:find', (e) => {
   } catch { /* fine */ }
 
   if (bridge) {
-    // One file, no server: no model, and nowhere to keep a key.
+    // One file, no server: no model, no PDF reader, and nowhere to keep a key.
     $('answer-btn').hidden = true;
+    $('read-full-wrap').hidden = true;
   } else {
     try {
       status = await api('/api/status');

@@ -13,7 +13,8 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.68.0"
+    "@anthropic-ai/sdk": "^0.68.0",
+    "pdfjs-dist": "^6.3.289"
   },
   "private": true
 }

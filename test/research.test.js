@@ -10,7 +10,9 @@ import {
   rebuildAbstract, normaliseOpenAlex, normaliseCrossref, splitName, buildFilter, bareDoi,
   searchWorks, getWork, connectedWorks, setFetch,
 } from '../lib/scholar.js';
-import { extractStudy, keyFinding, parseSynthesis, buildSynthesisMessage, studiesCsv } from '../lib/insights.js';
+import {
+  extractStudy, keyFinding, parseSynthesis, buildSynthesisMessage, studiesCsv, strongestFinding,
+} from '../lib/insights.js';
 import { WORKS } from './fixtures/openalex.js';
 
 // ---------------------------------------------------------------- query
@@ -315,4 +317,49 @@ test('the study table exports as CSV', () => {
   assert.match(row, /,"These results suggest that even a single short night impairs working memory in this age group, e\.g\. during examination periods\.",yes$/);
   const evil = studiesCsv([{ work: { ...work, title: '=HYPERLINK("x")' } }]).split('\n')[1];
   assert.match(evil, /^"'=HYPERLINK\(""x""\)",/);
+});
+
+test('the takeaway and the focus come back checked', () => {
+  const works = WORKS.map(normaliseOpenAlex);
+  works[0].fulltext = 'RESULTS: accuracy fell';
+  const out = parseSynthesis(JSON.stringify({
+    takeaway: 'Short sleep impairs working memory [1] and [8].',
+    focus: {
+      question: 'Does short sleep impair working memory in adolescents?',
+      population: 'Adolescents', exposure: 'Sleep restriction', comparison: 'null', outcome: 'Working memory',
+      evidenceNeeded: 'Randomised trials.',
+      nextSearches: ['a', 'b', 'c', 'd', 42],
+    },
+    answer: 'Yes [1].',
+    consensus: 'yes',
+    papers: [{ n: 1, stance: 'yes', limitation: 'One city only' }],
+  }), works);
+  assert.equal(out.takeaway, 'Short sleep impairs working memory [1] and.');
+  assert.equal(out.focus.population, 'Adolescents');
+  assert.equal(out.focus.comparison, null);
+  assert.deepEqual(out.focus.nextSearches, ['a', 'b', 'c']);
+  assert.equal(out.papers[0].limitation, 'One city only');
+  assert.equal(out.papers[0].fullText, true);
+  assert.deepEqual(out.fullTextIds, ['W1001']);
+});
+
+test('a reply without takeaway or focus still parses', () => {
+  const out = parseSynthesis('{"answer":"Unclear.","consensus":"insufficient","papers":[]}', WORKS.map(normaliseOpenAlex));
+  assert.equal(out.takeaway, null);
+  assert.deepEqual(out.focus.nextSearches, []);
+});
+
+test('the model is told which papers are full text', () => {
+  const works = WORKS.map(normaliseOpenAlex);
+  works[1].fulltext = 'METHODS: four waves';
+  const msg = buildSynthesisMessage('Q?', works);
+  assert.match(msg, /\[1\][^\n]*\n\(ABSTRACT ONLY\)/);
+  assert.match(msg, /\[2\][^\n]*\n\(FULL TEXT, condensed\)\nMETHODS: four waves/);
+});
+
+test('without a model, the takeaway is the strongest study\'s finding', () => {
+  const best = strongestFinding(WORKS.map(normaliseOpenAlex));
+  assert.equal(best.work.id, 'W1003', 'the meta-analysis outranks the trial and the cohort');
+  assert.match(best.study.finding, /^Across 61 studies/);
+  assert.equal(strongestFinding([]), null);
 });
