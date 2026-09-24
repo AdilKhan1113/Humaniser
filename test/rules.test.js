@@ -113,7 +113,7 @@ test('bold contracts more than light', () => {
 });
 
 test('breaks a long sentence at a conjunction', () => {
-  const long = 'The team shipped the feature on Friday afternoon after a long review, but the tests were still failing on the main branch that evening.';
+  const long = 'The team shipped the new reporting feature on Friday afternoon after a long and tiring review with the whole group, but the tests were still failing on the main branch late that evening.';
   const out = run(long, 'bold');
   assert.ok(out.split(/[.!?]/).filter((s) => s.trim()).length > 1, out);
   assert.match(out, /\. But /);
@@ -224,4 +224,22 @@ test('keeps a word that only looks like padding', () => {
   // Still cut where it genuinely adds nothing.
   assert.equal(run('This is a very good idea.'), 'This is a good idea.');
   assert.match(run('Clearly, the plan works.'), /^The plan works/);
+});
+
+test('the banned buzzwords are replaced with plain words', () => {
+  const out = run('We delve into this tapestry. Spearheaded by Ana, the pivotal project leveraged new tools. Furthermore, it helped.', 'balanced');
+  assert.doesNotMatch(out, /delve|tapestry|spearhead|pivotal|leverag|furthermore/i);
+  assert.match(out, /^We dig into this mix\. Led by Ana, the key project used new tools\./);
+});
+
+test('"not only X but also Y" becomes "X and Y"', () => {
+  assert.equal(run('It is not only faster but also cheaper.', 'light'), 'It is faster and cheaper.');
+  // The inverted form needs a person, so it is left for the report to flag.
+  assert.match(run('Not only did it rain, but it also snowed.', 'light'), /^Not only did it rain/);
+});
+
+test('em dashes are thinned: a pair becomes commas, one per paragraph survives', () => {
+  assert.equal(run('The plan — bold as it was — failed. It worked — once.', 'balanced'), 'The plan, bold as it was, failed. It worked — once.');
+  assert.equal(run('Pages 10—12 matter.', 'balanced'), 'Pages 10—12 matter.');
+  assert.equal(run('The plan — bold as it was — failed.', 'light'), 'The plan — bold as it was — failed.', 'light touch leaves dashes alone');
 });

@@ -1806,6 +1806,8 @@ const INFLATED = new Map(Object.entries({
   utilization: 'use',
   utilisation: 'use',
   leverage: 'use',
+  leverages: 'uses',
+  leveraged: 'used',
   leveraging: 'using',
   facilitate: 'help',
   facilitates: 'helps',
@@ -1921,6 +1923,14 @@ const AI_TELLS = [
   { find: /\bthe (?:landscape|realm|world) of\b/gi, use: '', label: 'padding' },
   { find: /\bdelve into\b/gi, use: 'dig into', label: 'overused verb' },
   { find: /\bdelving into\b/gi, use: 'digging into', label: 'overused verb' },
+  { find: /\bdelves into\b/gi, use: 'digs into', label: 'overused verb' },
+  { find: /\bdelved into\b/gi, use: 'dug into', label: 'overused verb' },
+  { find: /\bdelve\b(?!\s+into\b)/gi, use: 'dig', label: 'overused verb' },
+  { find: /\bdelves\b(?!\s+into\b)/gi, use: 'digs', label: 'overused verb' },
+  { find: /\bdelved\b(?!\s+into\b)/gi, use: 'dug', label: 'overused verb' },
+  { find: /\b(?:rich |vibrant |intricate )?tapestry\b/gi, use: 'mix', label: 'stock metaphor' },
+  { find: /\bspearhead(ed|ing|s)?\b/gi, use: (m, g) => ({ ed: 'led', ing: 'leading', s: 'leads' }[g?.toLowerCase()] || 'lead'), label: 'corporate verb' },
+  { find: /\bpivotal\b/gi, use: 'key', label: 'buzzword' },
   { find: /\bwhen it comes to\b/gi, use: 'with', label: 'padding' },
   { find: /\bplays? a (?:crucial|vital|key|pivotal|significant) role in\b/gi, use: 'is key to', label: 'padding' },
   { find: /\bserves? as a\b/gi, use: 'is a', label: 'padding' },
@@ -2700,6 +2710,11 @@ const { findPassives } = NS_passive;
 // Sentence-length window the house style asks for.
 const MIN_WORDS = 6;
 const MAX_WORDS = 20;
+// Long, flowing sentences are part of a good mix. Only past this is one a run-on.
+const LONG_WORDS = 30;
+// Under this a sentence counts as short, from this up as long.
+const SHORT_UNDER = 10;
+const LONG_FROM = 20;
 
 // Headings, list items and blockquotes stand alone as units. A line that is not
 // one of these and does not end in punctuation is a wrap, not a sentence.
@@ -2923,14 +2938,14 @@ function analyze(text, options = {}) {
   const sd = stdev(lengths);
   const cv = avg > 0 ? sd / avg : 0;
   const inRange = lengths.filter((n) => n >= MIN_WORDS && n <= MAX_WORDS).length;
-  const longOnes = sentences.filter((s) => s.words.length > MAX_WORDS);
+  const longOnes = sentences.filter((s) => s.words.length > LONG_WORDS);
 
   for (const s of longOnes) {
     issues.push(issue(clean, {
       type: 'long-sentence',
-      severity: s.words.length > 32 ? 'high' : 'medium',
+      severity: s.words.length > 42 ? 'high' : 'medium',
       title: `${s.words.length}-word sentence`,
-      detail: `Aim for ${MIN_WORDS}-${MAX_WORDS} words. Break it at a conjunction, or cut the padding.`,
+      detail: `A long, flowing sentence is fine, but past ${LONG_WORDS} words it becomes hard work. Break it at a conjunction, or cut the padding.`,
       start: s.start,
       end: s.end,
     }));
@@ -2942,6 +2957,89 @@ function analyze(text, options = {}) {
       severity: 'high',
       title: 'Sentences are all the same length',
       detail: `Lengths barely move (variation ${(cv * 100).toFixed(0)}%). Drop in a short, punchy one, then let the next breathe.`,
+    }));
+  }
+
+  // Three sentences of about the same length in a row is the machine beat,
+  // even when the text as a whole varies.
+  let runs = 0;
+  for (let i = 2; i < sentences.length && runs < 3; i += 1) {
+    const trio = [lengths[i - 2], lengths[i - 1], lengths[i]];
+    if (Math.min(...trio) >= 4 && Math.max(...trio) - Math.min(...trio) <= 3) {
+      runs += 1;
+      issues.push(issue(clean, {
+        type: 'same-length-run',
+        severity: 'medium',
+        title: `Three sentences in a row of ${Math.min(...trio)}-${Math.max(...trio)} words`,
+        detail: 'Never three of a kind. Cut one down to a few words, or let one run long and flowing.',
+        start: sentences[i - 2].start,
+        end: sentences[i].end,
+      }));
+      i += 2; // do not report overlapping runs
+    }
+  }
+
+  if (sentences.length >= 6) {
+    if (!lengths.some((n) => n < SHORT_UNDER)) {
+      issues.push(issue(clean, {
+        type: 'no-short-sentences',
+        severity: 'medium',
+        title: 'No short sentences',
+        detail: `Every sentence is ${SHORT_UNDER} words or more. Drop in a short one. It lands.`,
+      }));
+    }
+    if (words.length >= 120 && !lengths.some((n) => n >= LONG_FROM)) {
+      issues.push(issue(clean, {
+        type: 'no-long-sentences',
+        severity: 'low',
+        title: 'No long, flowing sentences',
+        detail: `Nothing reaches ${LONG_FROM} words. One sentence that builds and flows gives the short ones something to push against.`,
+      }));
+    }
+  }
+
+  // Paragraphs cut to the same size read as a template.
+  const paraLengths = clean.split(/\n\s*\n/).map((p) => tokenise(p).length).filter((n) => n >= 15);
+  if (paraLengths.length >= 3) {
+    const lo = Math.min(...paraLengths);
+    const hi = Math.max(...paraLengths);
+    if ((hi - lo) / hi < 0.25) {
+      issues.push(issue(clean, {
+        type: 'uniform-paragraphs',
+        severity: 'low',
+        title: `Every paragraph is ${lo}-${hi} words`,
+        detail: 'Vary them: a one-line paragraph after a long one breaks the template. Not every paragraph needs a neat topic sentence either.',
+      }));
+    }
+  }
+
+  // --- formulas -----------------------------------------------------------
+  const formulaRe = /\bnot only\b[^.!?]{1,120}?\bbut(?: also)?\b|\bit(?:'s| is) not (?:just |only |merely )?[^.,;!?]{1,40}[,;—-]+\s*(?:it(?:'s| is)|but)\b/gi;
+  let formulaMatch;
+  let formulas = 0;
+  while ((formulaMatch = formulaRe.exec(clean)) !== null && formulas < 3) {
+    formulas += 1;
+    issues.push(issue(clean, {
+      type: 'formula',
+      severity: 'medium',
+      title: 'Symmetrical formula',
+      detail: '"Not only X, but also Y" and "it\'s not X, it\'s Y" are machine patterns. Say the two things plainly.',
+      start: formulaMatch.index,
+      end: formulaMatch.index + formulaMatch[0].length,
+    }));
+  }
+
+  const dashCount = (clean.match(/—|(?<=\s)--(?=\s)/g) || []).length;
+  const dashParas = clean.split(/\n\s*\n/).filter((p) => (p.match(/—|(?<=\s)--(?=\s)/g) || []).length > 1).length;
+  if (dashParas > 0) {
+    const first = clean.search(/—|(?<=\s)--(?=\s)/);
+    issues.push(issue(clean, {
+      type: 'em-dashes',
+      severity: dashCount > 4 ? 'medium' : 'low',
+      title: `${dashCount} em dashes`,
+      detail: 'One em dash can earn its place. More than one a paragraph is a tell. Use a comma, a full stop or brackets.',
+      start: first >= 0 ? first : null,
+      end: first >= 0 ? first + 1 : null,
     }));
   }
 
@@ -3141,12 +3239,15 @@ function analyze(text, options = {}) {
 
   // --- reader connection --------------------------------------------------
   const secondPerson = (clean.match(/\b(?:you|your|you're|yours)\b/gi) || []).length;
-  if (words.length > 80 && secondPerson === 0 && !constraints.noSecondPerson) {
+  const firstPerson = (clean.match(/\b(?:I|me|my|mine|I'm|I've|I'd|I'll)\b/g) || []).length;
+  const personAllowed = !constraints.noSecondPerson || !constraints.noFirstPerson;
+  if (words.length > 80 && secondPerson === 0 && firstPerson === 0 && personAllowed) {
+    const which = constraints.noSecondPerson ? '"I"' : constraints.noFirstPerson ? '"you"' : '"I" or "you"';
     issues.push(issue(clean, {
       type: 'no-you',
       severity: 'medium',
-      title: 'Never speaks to the reader',
-      detail: 'One "you" turns a lecture into a conversation.',
+      title: 'Nobody is talking to anybody',
+      detail: `No ${which} anywhere. Write as a person to a person: one ${which} turns a lecture into a conversation.`,
     }));
   }
 
@@ -3290,7 +3391,7 @@ function verdictFor(score) {
   return 'Unmistakably machine-made';
 }
 
-return { MIN_WORDS, MAX_WORDS, splitSentences, tokenise, countSyllables, findCommaSplices, looksIndependent, analyze };
+return { MIN_WORDS, MAX_WORDS, LONG_WORDS, splitSentences, tokenise, countSyllables, findCommaSplices, looksIndependent, analyze };
 })();
 
 // ---- lib/rules.js ----
@@ -3312,23 +3413,24 @@ const PROFILES = {
   light: {
     label: 'Light touch',
     description: 'Only the changes no one could argue with: stock phrases, inflated words, the comma rule.',
-    steps: { tells: true, inflated: true, nominals: true, splices: true },
+    steps: { tells: true, inflated: true, nominals: true, splices: true, formulas: true },
     contractionRatio: 0,
     splitAt: Infinity,
   },
   balanced: {
     label: 'Balanced',
-    description: 'The full house style: active voice, shorter sentences, contractions, no padding.',
-    steps: { tells: true, inflated: true, nominals: true, splices: true, passive: true, contractions: true, hedges: true, split: true },
+    description: 'The full house style: active voice, varied sentences, contractions, no padding.',
+    steps: { tells: true, inflated: true, nominals: true, splices: true, passive: true, contractions: true, hedges: true, split: true, formulas: true, dashes: true },
     contractionRatio: 2 / 3,
-    splitAt: 22,
+    // Long, flowing sentences are welcome now; only real run-ons are split.
+    splitAt: 30,
   },
   bold: {
     label: 'Bold',
-    description: 'Same rules, pushed harder. Shorter sentences, contractions wherever they fit.',
-    steps: { tells: true, inflated: true, nominals: true, splices: true, passive: true, contractions: true, hedges: true, split: true },
+    description: 'Same rules, pushed harder. More short sentences, contractions wherever they fit.',
+    steps: { tells: true, inflated: true, nominals: true, splices: true, passive: true, contractions: true, hedges: true, split: true, formulas: true, dashes: true },
     contractionRatio: 1,
-    splitAt: 18,
+    splitAt: 24,
   },
 };
 
@@ -3398,7 +3500,7 @@ function applyRule(text, find, use, log, rule, note) {
   const re = new RegExp(find.source, find.flags.includes('g') ? find.flags : `${find.flags}g`);
   return text.replace(re, (...args) => {
     const whole = args[0];
-    const replacement = typeof use === 'function' ? use(...args) : matchCase(whole, use);
+    const replacement = matchCase(whole, typeof use === 'function' ? use(...args) : use);
     log.add(rule, whole, replacement, note);
     return replacement;
   });
@@ -3412,6 +3514,53 @@ function stripAiTells(text, log) {
     out = applyRule(out, find, use, log, 'stock phrase', label);
   }
   return out;
+}
+
+// "not only fast but also cheap" is a symmetrical formula machines love.
+// "fast and cheap" says the same. Only the plain adjacent form is rewritten;
+// "not only did it rain, but it also…" needs a person, and is flagged instead.
+const NOT_ONLY_RE = /\bnot only\s+([^,.;:!?\n]{1,60}?),?\s+but also\s+/gi;
+
+function unpairFormulas(text, log) {
+  return text.replace(NOT_ONLY_RE, (whole, first) => {
+    if (/^(?:do|does|did|is|are|was|were|has|have|had|can|could|will|would|should)\b/i.test(first)) return whole;
+    const out = `${first} and `;
+    log.add('no formulas', whole, out, '"not only X but also Y"');
+    return out;
+  });
+}
+
+// One em dash in a paragraph can earn its place; a string of them is a tell.
+// A sentence with a pair of dashes gets a pair of commas instead, so the
+// aside stays bracketed. A lone dash survives only once per paragraph.
+const DASH_RE = /\s*(?:—|--)\s*/g;
+const isRange = (full, offset, whole) => /\d$/.test(full.slice(0, offset)) && /^\d/.test(full.slice(offset + whole.length));
+
+function calmDashes(text, log) {
+  return text.split(/(\n\s*\n)/).map((para) => {
+    let allowance = 1;
+    return para.split(/(?<=[.!?])(\s+)/).map((sentence) => {
+      const dashes = [...sentence.matchAll(DASH_RE)].filter((m) => !isRange(sentence, m.index, m[0]));
+      if (!dashes.length) return sentence;
+      if (dashes.length === 1 && allowance > 0) { allowance -= 1; return sentence; }
+      // A bracketing pair: commas, or brackets when the aside is itself a list,
+      // so "habits — hours, mornings, commutes — that" stays readable.
+      if (dashes.length === 2) {
+        const [a, b] = dashes;
+        const inner = sentence.slice(a.index + a[0].length, b.index);
+        const tail = sentence.slice(b.index + b[0].length);
+        const closing = /^[.,;:!?]/.test(tail) ? '' : ' ';
+        const swapped = inner.includes(',') ? ` (${inner})${closing}` : `, ${inner}${closing ? ', ' : ''}`;
+        log.add('fewer dashes', sentence.slice(a.index, b.index + b[0].length), swapped.trim(), 'a pair of em dashes');
+        return sentence.slice(0, a.index) + swapped + tail;
+      }
+      return sentence.replace(DASH_RE, (whole, offset, full) => {
+        if (isRange(full, offset, whole)) return whole;
+        log.add('fewer dashes', whole, ', ', 'more than one em dash in a paragraph');
+        return ', ';
+      });
+    }).join('');
+  }).join('');
 }
 
 const INFLATED_KEYS = [...INFLATED.keys()].sort((a, b) => b.length - a.length);
@@ -3730,6 +3879,8 @@ function humanise(input, options = {}) {
   // Order is deliberate: passives are flipped while their participles are still
   // intact, and the comma rule runs after splitting, which can create new joins.
   if (profile.steps.tells) text = stripAiTells(text, log);
+  if (profile.steps.formulas) text = unpairFormulas(text, log);
+  if (profile.steps.dashes) text = calmDashes(text, log);
   if (profile.steps.passive) text = activeVoice(text, log, !constraints.noFirstPerson);
   if (profile.steps.inflated) text = simplifyWords(text, log);
   if (profile.steps.nominals) text = unburyVerbs(text, log);

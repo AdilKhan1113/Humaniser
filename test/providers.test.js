@@ -76,7 +76,12 @@ test('opts into server-side refusal fallback with the matching beta', () => {
 });
 
 test('the house style states the rules the offline engine cannot check', () => {
-  for (const rule of [/active voice/i, /burstiness/i, /contractions/i, /6 and 20/, /No self-references/i]) {
+  for (const rule of [
+    /active voice/i, /burstiness/i, /contractions/i, /under 10 words/, /20 words or more/,
+    /three sentences of similar length/i, /paragraph size/i, /delve, tapestry, pivotal, moreover, furthermore/,
+    /spearhead/, /not only X, but also Y/, /em dash/i, /first or second person/i, /sensory/i, /imperfection/i,
+    /No self-references/i,
+  ]) {
     assert.match(HOUSE_STYLE, rule);
   }
   assert.match(HOUSE_STYLE, /Return only the rewritten text/);

@@ -65,8 +65,10 @@ test('burstiness rises when sentence lengths vary', () => {
   assert.ok(analyze(varied).rhythm.burstiness > analyze(flat).rhythm.burstiness);
 });
 
-test('flags a sentence longer than the target window', () => {
-  const long = 'This particular sentence has been written deliberately so that it runs well past the target window of twenty words and therefore should be flagged by the report.';
+test('a long, flowing sentence is fine; a run-on past thirty words is flagged', () => {
+  const flowing = 'This particular sentence has been written deliberately so that it runs well past twenty words and still reads as one clear, flowing thought.';
+  assert.equal(analyze(flowing).issues.filter((i) => i.type === 'long-sentence').length, 0);
+  const long = 'This particular sentence has been written deliberately so that it runs well past the thirty word limit that the report now uses for run-ons and therefore it should be flagged by the report as far too long.';
   const issues = analyze(long).issues.filter((i) => i.type === 'long-sentence');
   assert.equal(issues.length, 1);
   assert.ok(issues[0].start === 0);
@@ -120,4 +122,41 @@ test('a hard line wrap does not end a sentence', () => {
   const sentences = splitSentences(wrapped);
   assert.equal(sentences.length, 1);
   assert.equal(sentences[0].words.length, 22);
+});
+
+test('three sentences of similar length in a row are flagged', () => {
+  const text = 'The market grew by ten percent. The team hired twelve new staff. The firm opened three new offices. Then it stopped.';
+  const runs = analyze(text).issues.filter((i) => i.type === 'same-length-run');
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].start, 0);
+  assert.equal(analyze('Short one. Then a much longer sentence that takes its time to arrive somewhere. Done.').issues.some((i) => i.type === 'same-length-run'), false);
+});
+
+test('a text with no short sentences, or no long ones, is told so', () => {
+  const noShort = Array.from({ length: 6 }, (_, i) => `Sentence number ${i + 1} is written here with a steady length today.`).join(' ');
+  assert.ok(analyze(noShort).issues.some((i) => i.type === 'no-short-sentences'));
+});
+
+test('paragraphs of the same size are flagged', () => {
+  const para = 'This paragraph has about the same number of words as the others do in this sample text here today.';
+  const text = [para, para.replace('This', 'That'), para.replace('sample', 'little')].join('\n\n');
+  assert.ok(analyze(text).issues.some((i) => i.type === 'uniform-paragraphs'));
+  const varied = [para, 'Short.', `${para} ${para}`].join('\n\n');
+  assert.equal(analyze(varied).issues.some((i) => i.type === 'uniform-paragraphs'), false);
+});
+
+test('symmetrical formulas, em-dash strings and the banned words are flagged', () => {
+  const issues = analyze('It is not only fast but also cheap. The plan — bold — failed. We delve into a pivotal tapestry. Moreover, we spearhead it.').issues;
+  const types = issues.map((i) => i.type);
+  assert.ok(types.includes('formula'));
+  assert.ok(types.includes('em-dashes'));
+  for (const word of ['delve', 'pivotal', 'tapestry', 'moreover', 'spearhead']) {
+    assert.ok(issues.some((i) => new RegExp(word, 'i').test(i.title)), word);
+  }
+});
+
+test('first person counts as talking to someone', () => {
+  const long = (w) => `${w} ${'words here and there '.repeat(22)}`;
+  assert.ok(analyze(long('The report said')).issues.some((i) => i.type === 'no-you'));
+  assert.equal(analyze(long('I think')).issues.some((i) => i.type === 'no-you'), false);
 });

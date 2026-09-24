@@ -129,7 +129,7 @@ Click any finding and it selects that exact phrase in your text. Click a bar in 
 | Setting | What it touches |
 | --- | --- |
 | Light touch | Only the uncontroversial: stock phrases, inflated words, the comma rule |
-| Balanced | The full style — active voice, shorter sentences, contractions, no padding |
+| Balanced | The full style: active voice, varied sentences, contractions, no padding, no buzzwords |
 | Bold | Same rules, harder. Shorter sentences, contractions wherever they fit |
 
 **Thinking** appears in Claude mode and sets how hard the model works. Low is fast and surprisingly good. High is the default. Very high is for prose you really care about.
@@ -186,7 +186,15 @@ Two of the numbers deserve a word of explanation, because they are named after i
 
 Both engines work from the same rules.
 
-Active voice over passive. Sentences of varied shape and varied length, mostly between 6 and 20 words. Plain words where a plain word will do. Contractions, but not wall to wall. Speak to the reader as "you". Concrete examples and analogies over another abstract sentence. Natural transitions like "However" or "For example". No padding, no self-references, no essay scaffolding, no lecturing.
+Active voice over passive. Plain words where a plain word will do. Contractions, but not wall to wall. No padding, no self-references, no essay scaffolding, no lecturing.
+
+**Rhythm.** Mix very short sentences, under 10 words, with long, flowing ones of 20 or more, and never three sentences of similar length in a row. Only real run-ons, past 30 words, get split. Paragraphs vary in size too, and not every one opens with a neat topic sentence.
+
+**Banned words and patterns.** Delve, tapestry, pivotal, moreover, furthermore, leverage, spearhead, "in conclusion" and the rest of the machine vocabulary are replaced with plain words. "Not only X, but also Y" becomes "X and Y". Em dashes are held to one a paragraph: a bracketing pair becomes commas, or brackets when the aside is itself a list.
+
+**Tone.** First or second person: "you" for the reader, "I" where the writer gives their own view. Concrete, sensory wording and real situations over abstractions, drawn from what the text already says. Some imperfection is welcome: casual phrasing and a clear opinion, where the writer's view is plain, beat sterile neutrality.
+
+The offline engine applies the mechanical parts (the banned words, the formula, the dashes, splitting run-ons) and the report flags the rest: three similar sentences in a row, no short or no long sentences, paragraphs all the same size, no "I" or "you". The tone rules need judgement, so the model engine carries them. A marking guide still wins: with a formal, third-person guide loaded, the casual, first-person and opinion rules switch off, while rhythm, the banned words and the dash limit still apply.
 
 One mechanical rule is worth stating plainly, because it surprises people: **no comma before and, but, for, or, nor, so, yet when both sides could stand alone as sentences.** So "I read the book but I disliked it", not "I read the book, but I disliked it". Lists keep their commas, and a comma stays when what follows cannot stand alone.
 
