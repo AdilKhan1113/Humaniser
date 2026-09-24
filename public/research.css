@@ -437,3 +437,93 @@ footer a { color: inherit; }
   .appnav { order: -1; }
   .work { padding: 12px; }
 }
+
+/* ---------- across the results: answer, meter, study table ---------- */
+.insight {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.insight-head { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
+.insight-note { margin: 10px 0 0; font-size: 13px; color: var(--ink-2); }
+.insight-note code { font-size: 12px; background: var(--surface-sunk); padding: 1px 5px; border-radius: 4px; }
+
+.segmented { display: inline-flex; background: var(--surface-sunk); padding: 3px; border-radius: 10px; gap: 2px; }
+.seg {
+  border: 0;
+  background: transparent;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+  border-radius: 8px;
+}
+.seg.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+
+.answer { margin-top: 12px; border-top: 1px solid var(--hairline); padding-top: 12px; }
+.answer-text { margin: 8px 0; font-size: 15px; line-height: 1.65; }
+.answer-foot { margin: 0 0 10px; font-size: 12px; color: var(--ink-muted); }
+.answer-loading { margin: 0; color: var(--ink-2); font-size: 14px; }
+.answer-error { margin: 0; color: var(--over); font-size: 14px; }
+.refs { display: inline-flex; gap: 2px; margin-left: 2px; vertical-align: super; line-height: 1; }
+.ref {
+  border: 0;
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 16px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.ref:hover { background: var(--accent); color: #fff; }
+
+.meter-row { display: flex; flex-direction: column; gap: 6px; }
+.consensus { margin: 0; font-size: 13px; color: var(--ink-2); }
+.consensus-label { font-weight: 700; color: var(--ink); font-size: 15px; }
+.cmeter { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--surface-sunk); gap: 2px; }
+.cm.yes, .dot.yes { background: var(--good-text); }
+.cm.possibly, .dot.possibly { background: var(--warn); }
+.cm.no, .dot.no { background: var(--over); }
+.cmeter-legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0; font-size: 12px; color: var(--ink-2); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+
+.work.flash { box-shadow: 0 0 0 3px var(--accent); transition: box-shadow 200ms; }
+
+.table-view {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+.table-tools { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; margin-bottom: 10px; }
+.table-note { margin: 0; font-size: 12px; color: var(--ink-muted); flex: 1; min-width: 200px; }
+.table-view .table-wrap { overflow-x: auto; }
+table.studies { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+table.studies th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--hairline);
+  padding: 6px 8px;
+}
+table.studies td { vertical-align: top; padding: 9px 8px; border-bottom: 1px solid var(--hairline); color: var(--ink-2); }
+table.studies tr:last-child td { border-bottom: 0; }
+.t-paper { width: 30%; }
+.t-finding { width: 38%; }
+.t-title { text-align: left; color: var(--ink); text-decoration: none; font-weight: 600; line-height: 1.35; }
+.t-title:hover { text-decoration: underline; }
+.t-meta { display: block; font-size: 12px; color: var(--ink-muted); margin-top: 2px; }
+.t-retracted { color: var(--over); }
+.nil { color: var(--ink-muted); font-style: italic; }
+.ai-mark { color: var(--accent); font-size: 11px; }
+.stance { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.stance.yes { background: var(--good-wash); color: var(--good-text); }
+.stance.possibly { background: var(--warn-wash); color: var(--warn); }
+.stance.no { background: var(--over-wash); color: var(--over); }
+.stance.unclear { background: var(--surface-sunk); color: var(--ink-muted); }

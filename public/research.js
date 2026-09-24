@@ -7,6 +7,7 @@
 import { STYLES, inText, reference, referenceList, bibtex, ris, toPlain } from '/shared/cite.js';
 import { overlap } from '/shared/overlap.js';
 import { splitSentences } from '/shared/sentences.js';
+import { extractStudy, studiesCsv, MAX_SYNTHESIS_PAPERS } from '/shared/insights.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -64,6 +65,10 @@ const savedWorks = () => project().sourceOrder.map((id) => project().sources[id]
 
 let status = { model: { keyInEnv: false, accessCodeRequired: false } };
 
+// The single-file build has no server. It injects this bridge, which calls
+// OpenAlex straight from the page and runs the offline engines in place.
+const bridge = typeof window !== 'undefined' ? window.HUMANISER_OFFLINE?.research || null : null;
+
 async function api(path, options = {}) {
   let res;
   try {
@@ -74,6 +79,44 @@ async function api(path, options = {}) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `The server answered ${res.status}.`);
   return data;
+}
+
+/** Every call Research makes, one shape for both builds. */
+const backend = {
+  search: (params) => (bridge ? bridge.search(params) : api(`/api/research/search?${new URLSearchParams(params)}`)),
+  connected: (id, kind) => (bridge
+    ? bridge.connected(id, kind, { perPage: 10 })
+    : api(`/api/research/connected?${new URLSearchParams({ id, kind, perPage: '10' })}`)),
+  work: (id) => (bridge ? bridge.work(id).then((work) => ({ work })) : api(`/api/research/work?${new URLSearchParams({ id })}`)),
+  paraphrase: (text) => (bridge ? Promise.resolve(bridge.paraphrase(text)) : api('/api/research/paraphrase', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, engine: 'offline' }),
+  })),
+  // The rewriter's engine under academic rules: no contractions, no "you", no "we".
+  polish: (text) => (bridge ? Promise.resolve({ text: bridge.polish(text) }) : api('/api/humanise', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text, strength: 'light', constraints: ACADEMIC }),
+  }).then((r) => ({ text: r.text }))),
+  synthesize: (question, works) => api('/api/research/synthesize', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-access-code': accessCode() },
+    body: JSON.stringify({ question, works }),
+  }),
+};
+
+const ACADEMIC = { noContractions: true, noFirstPerson: true, noSecondPerson: true, formalRegister: true };
+
+/** The model's access code, entered once in whichever dialog asked for it. */
+function accessCode() {
+  try { return sessionStorage.getItem('humaniser.code') || $('para-code').value || ''; } catch { return $('para-code').value || ''; }
+}
+async function ensureAccessCode() {
+  if (!status.model.accessCodeRequired || accessCode()) return true;
+  const code = await ask({ title: 'Access code', sub: 'Whoever runs this server set one for the AI features.', okLabel: 'Continue' });
+  if (!code) return false;
+  $('para-code').value = code;
+  try { sessionStorage.setItem('humaniser.code', code); } catch { /* fine */ }
+  return true;
 }
 
 // ---------------------------------------------------------------- small UI helpers
@@ -305,6 +348,10 @@ async function runSearch({ page = 1, params = searchParams() } = {}) {
   if (!params.q) { ui.q.focus(); return; }
   const append = page > 1;
   if (!append) {
+    synthesis = null;
+    $('answer-note').hidden = true;
+    ui.results.hidden = false;
+    $('table-view').hidden = true;
     ui.results.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
     ui.head.hidden = true;
     ui.pager.hidden = true;
@@ -314,8 +361,7 @@ async function runSearch({ page = 1, params = searchParams() } = {}) {
   }
   $('search-btn').disabled = true;
   try {
-    const qs = new URLSearchParams({ ...params, page: String(page) });
-    const data = await api(`/api/research/search?${qs}`);
+    const data = await backend.search({ ...params, page: String(page) });
     data.results.forEach((w) => workCache.set(w.id, w));
     lastSearch = {
       params,
@@ -323,6 +369,7 @@ async function runSearch({ page = 1, params = searchParams() } = {}) {
       total: data.total,
       results: append ? [...lastSearch.results, ...data.results] : data.results,
       interpreted: data.interpreted,
+      query: data.query,
     };
     showSearch(append ? data.results : null);
   } catch (error) {
@@ -351,6 +398,10 @@ function showSearch(appended = null) {
   if (appended) ui.results.insertAdjacentHTML('beforeend', html);
   else ui.results.innerHTML = html || '<div class="empty"><p class="empty-title">Nothing matched.</p><p class="empty-note">Try fewer words, loosen the filters, or switch off “Peer-reviewed journals only” to include books, conference papers and preprints.</p></div>';
   ui.pager.hidden = s.results.length >= s.total || s.results.length >= 500;
+  $('insight').hidden = !s.results.length;
+  $('answer-btn').innerHTML = s.interpreted.mode === 'keywords' ? '✦ Summarise these papers' : '✦ Answer from these papers';
+  renderAnswer();
+  setResultView(resultView);
 }
 
 function badges(w) {
@@ -475,7 +526,7 @@ async function toggleConnected(card, w, kind, btn) {
   box.dataset.kind = kind;
   box.innerHTML = `<p class="connected-head">${CONNECT_LABEL[kind]}</p><p class="mini-meta">Loading…</p>`;
   try {
-    const data = await api(`/api/research/connected?${new URLSearchParams({ id: w.id, kind, perPage: '10' })}`);
+    const data = await backend.connected(w.id, kind);
     data.results.forEach((r) => workCache.set(r.id, r));
     if (box.dataset.kind !== kind) return;
     box.innerHTML = `<p class="connected-head">${CONNECT_LABEL[kind]} · ${nf.format(data.total)}</p>${
@@ -500,6 +551,9 @@ function miniRow(w) {
 
 /** Shows one paper on its own, with a way back to the results. */
 function openSingle(w) {
+  $('insight').hidden = true;
+  $('table-view').hidden = true;
+  ui.results.hidden = false;
   ui.head.hidden = false;
   ui.back.hidden = !lastSearch;
   ui.title.innerHTML = '<strong>One paper</strong>';
@@ -544,7 +598,7 @@ ui.results.addEventListener('keydown', (e) => {
   }
 });
 
-ui.back.addEventListener('click', () => showSearch());
+ui.back.addEventListener('click', () => { $('insight').hidden = false; showSearch(); });
 ui.more.addEventListener('click', () => runSearch({ page: (lastSearch?.page || 1) + 1, params: lastSearch.params }));
 
 ui.form.addEventListener('submit', (e) => { e.preventDefault(); runSearch(); });
@@ -638,17 +692,14 @@ async function runParaphrase() {
   $('para-run').disabled = true;
   try {
     if (engine === 'model') {
+      if (!(await ensureAccessCode())) { statusLine.textContent = ''; return; }
       statusLine.textContent = 'Writing…';
       const variants = await paraphraseWithModel(text);
       showVariants(variants, text);
       statusLine.textContent = 'Three versions. Edit any of them; the overlap check follows your edits.';
     } else {
       statusLine.textContent = '';
-      const data = await api('/api/research/paraphrase', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text, engine: 'offline' }),
-      });
+      const data = await backend.paraphrase(text);
       showVariants(data.variants, text);
       statusLine.textContent = data.variants.length
         ? 'Starting points, not finished sentences. Rework the one closest to what you mean.'
@@ -666,7 +717,7 @@ async function runParaphrase() {
 async function paraphraseWithModel(text) {
   const res = await fetch('/api/research/paraphrase', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-access-code': $('para-code').value },
+    headers: { 'content-type': 'application/json', 'x-access-code': accessCode() },
     body: JSON.stringify({ text, engine: 'model', context: para.context || '' }),
   });
   if (!res.ok) {
@@ -718,6 +769,7 @@ function showVariants(variants, source) {
       <p class="overlap-advice">${esc(v.overlap.advice)}</p>
       <p class="with-cite"></p>
       <div class="row-actions">
+        <button type="button" class="ghost" data-v="polish" title="Smooth the wording under academic rules: no contractions, no first or second person">Polish</button>
         <button type="button" class="ghost" data-v="copy">Copy with citation</button>
         <button type="button" class="primary small" data-v="save">Save as finding</button>
       </div>
@@ -745,6 +797,15 @@ $('para-variants').addEventListener('click', async (e) => {
   const card = e.target.closest('.variant');
   const text = card.querySelector('textarea').value.trim();
   if (!text) { toast('Write something first.'); return; }
+  if (act === 'polish') {
+    try {
+      const { text: polished } = await backend.polish(text);
+      card.querySelector('textarea').value = polished;
+      refreshVariant(card);
+      toast(polished === text ? 'Already reads cleanly.' : 'Polished');
+    } catch (error) { toast(error.message); }
+    return;
+  }
   const page = $('para-page').value.trim();
   const placement = $('para-place').value;
   if (act === 'copy') copy(attachCitation(text, para.work, { page, placement }), 'Copied with its citation');
@@ -862,7 +923,7 @@ $('add-manual').addEventListener('click', async () => {
   const value = await ask({ title: 'Add a paper by DOI', sub: 'Paste a DOI or a doi.org link.', okLabel: 'Look it up' });
   if (!value) return;
   try {
-    const { work } = await api(`/api/research/work?${new URLSearchParams({ id: value.startsWith('W') ? value : `doi:${value}` })}`);
+    const { work } = await backend.work(/^W\d+$/i.test(value) ? value : `doi:${value}`);
     workCache.set(work.id, work);
     saveWork(work);
   } catch (error) {
@@ -895,6 +956,7 @@ function renderFindings() {
       <div class="theme-head">
         <h3 class="theme-name">${esc(t.name)} <span class="pill">${t.items.length}</span></h3>
         <div class="row-actions">
+          ${t.items.length ? '<button type="button" class="ghost" data-th="write" title="Open these findings in the rewriter as a paragraph">Write up</button>' : ''}
           ${ti > 1 ? `<button type="button" class="ghost" data-th="up" aria-label="Move theme up">↑</button>` : ''}
           ${t.id !== INBOX ? `<button type="button" class="ghost" data-th="rename">Rename</button><button type="button" class="ghost" data-th="delete">Delete</button>` : ''}
         </div>
@@ -948,6 +1010,13 @@ $('findings').addEventListener('click', async (e) => {
   if (th) {
     const id = e.target.closest('.theme').dataset.theme;
     const i = p.themes.findIndex((t) => t.id === id);
+    if (th === 'write') {
+      const text = p.themes[i].items.map((fid) => p.findings[fid]).filter(Boolean).map(findingInDraft).join(' ');
+      document.dispatchEvent(new CustomEvent('humaniser:rewrite', {
+        detail: { text, academic: true, citationStyle: STYLES[style()].label },
+      }));
+      return;
+    }
     if (th === 'up' && i > 1) [p.themes[i - 1], p.themes[i]] = [p.themes[i], p.themes[i - 1]];
     if (th === 'rename') {
       const name = await ask({ title: 'Rename theme', value: p.themes[i].name, okLabel: 'Rename' });
@@ -1184,6 +1253,230 @@ $('style').addEventListener('change', () => {
   if ($('para-dialog').open) document.querySelectorAll('#para-variants .variant').forEach((c) => refreshVariant(c));
 });
 
+// ---------------------------------------------------------------- across the results
+
+let resultView = 'list';
+let synthesis = null; // { data, question }
+let tableSort = 'relevance';
+
+function setResultView(view) {
+  resultView = view;
+  document.querySelectorAll('[data-rview]').forEach((b) => {
+    const on = b.dataset.rview === view;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  const table = view === 'table' && lastSearch?.results.length;
+  $('table-view').hidden = !table;
+  ui.results.hidden = Boolean(table);
+  ui.pager.hidden = Boolean(table) || !lastSearch || lastSearch.results.length >= lastSearch.total;
+  if (table) renderTable();
+}
+document.querySelectorAll('[data-rview]').forEach((b) => b.addEventListener('click', () => setResultView(b.dataset.rview)));
+
+function tableRows() {
+  return lastSearch.results.map((work, index) => {
+    const x = extractStudy(work);
+    const m = synthesis?.data.papers.find((p) => p.id === work.id);
+    return {
+      work,
+      index,
+      design: m?.design || x.design,
+      designRank: x.designRank,
+      population: m?.population || x.population,
+      sample: m?.sample || x.sample,
+      sampleSize: x.sampleSize,
+      finding: m?.finding || x.finding,
+      stance: m?.stance || null,
+      ai: Boolean(m),
+    };
+  });
+}
+
+const SORTERS = {
+  relevance: (a, b) => a.index - b.index,
+  evidence: (a, b) => a.designRank - b.designRank || b.work.citedBy - a.work.citedBy,
+  sample: (a, b) => b.sampleSize - a.sampleSize,
+  cited: (a, b) => b.work.citedBy - a.work.citedBy,
+  newest: (a, b) => (b.work.year || 0) - (a.work.year || 0),
+};
+
+const STANCE_LABEL = { yes: 'Yes', possibly: 'Possibly', no: 'No', unclear: 'Unclear' };
+
+function renderTable() {
+  const rows = tableRows().sort(SORTERS[tableSort] || SORTERS.relevance);
+  const withStance = rows.some((r) => r.stance);
+  const cell = (v) => (v ? esc(v) : '<span class="nil">not stated</span>');
+  $('table-view').innerHTML = `
+    <div class="table-tools">
+      <div class="field">
+        <label for="table-sort">Order</label>
+        <select id="table-sort">
+          <option value="relevance">Best match</option>
+          <option value="evidence">Strongest evidence first</option>
+          <option value="sample">Largest sample</option>
+          <option value="cited">Most cited</option>
+          <option value="newest">Newest</option>
+        </select>
+      </div>
+      <button type="button" class="ghost" id="table-csv">Export CSV</button>
+      <p class="table-note">${synthesis ? '✦ marks rows read by the AI from the abstract. ' : ''}Read from abstracts, not full texts. Check anything you rely on.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="studies">
+        <thead><tr><th scope="col">Paper</th><th scope="col">Design</th><th scope="col">Sample</th><th scope="col">Key finding</th>${withStance ? '<th scope="col">Answer</th>' : ''}<th scope="col"><span class="visually-hidden">Save</span></th></tr></thead>
+        <tbody>${rows.map((r) => `
+          <tr data-id="${esc(r.work.id)}">
+            <td class="t-paper">
+              <button type="button" class="linkish t-title" data-open="${esc(r.work.id)}">${esc(r.work.title)}</button>
+              <span class="t-meta">${esc(authorsShort(r.work))} · ${esc(r.work.year || 'n.d.')} · cited by ${nf.format(r.work.citedBy || 0)}${r.work.retracted ? ' · <strong class="t-retracted">retracted</strong>' : ''}</span>
+            </td>
+            <td>${cell(r.design)}${r.ai ? ' <span class="ai-mark" title="Read by the AI">✦</span>' : ''}</td>
+            <td>${cell(r.sample)}${r.population && r.population !== r.sample ? `<span class="t-meta">${esc(r.population)}</span>` : ''}</td>
+            <td class="t-finding">${cell(r.finding)}</td>
+            ${withStance ? `<td>${r.stance ? `<span class="stance ${r.stance}">${STANCE_LABEL[r.stance]}</span>` : ''}</td>` : ''}
+            <td><button type="button" class="ghost" data-mini-save="${esc(r.work.id)}" title="${isSaved(r.work.id) ? 'Saved' : 'Save to sources'}">${isSaved(r.work.id) ? '★' : '☆'}</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  $('table-sort').value = tableSort;
+  $('table-sort').onchange = () => { tableSort = $('table-sort').value; renderTable(); };
+  $('table-csv').onclick = () => download(`studies-${slug(lastSearch.query).slice(0, 40)}.csv`, studiesCsv(tableRows()), 'text/csv');
+}
+
+$('table-view').addEventListener('click', (e) => {
+  const open = e.target.closest('[data-open]');
+  if (open) { openSingle(workCache.get(open.dataset.open)); return; }
+  const star = e.target.closest('[data-mini-save]');
+  if (star) {
+    const w = workCache.get(star.dataset.miniSave);
+    if (isSaved(w.id)) unsaveWork(w.id); else saveWork(w);
+    renderTable();
+  }
+});
+
+const CONSENSUS_LABEL = {
+  yes: 'Yes', 'mostly-yes': 'Mostly yes', mixed: 'Mixed', 'mostly-no': 'Mostly no', no: 'No',
+  insufficient: 'Not enough evidence in these papers',
+};
+
+/** The works an answer cites, in its numbering. */
+const answerWorks = () => (synthesis ? synthesis.data.ids.map((id) => workCache.get(id)).filter(Boolean) : []);
+
+/** Swaps the answer's [1, 3] markers for real in-text citations in the chosen style. */
+function answerWithCitations() {
+  const works = answerWorks();
+  const cited = new Set();
+  const groups = [];
+  synthesis.data.answer.replace(/\[([\d,\s]+)\]/g, (m, inner) => {
+    const ws = inner.split(',').map((n) => works[Number(n) - 1]).filter(Boolean);
+    ws.forEach((w) => cited.add(w));
+    groups.push(ws);
+    return m;
+  });
+  const library = [...savedWorks(), ...[...cited].filter((w) => !isSaved(w.id))];
+  let i = 0;
+  const text = synthesis.data.answer.replace(/\s*\[([\d,\s]+)\]/g, () => {
+    const ws = groups[i++];
+    return ws.length ? ` ${inText(ws, style(), { library })}` : '';
+  });
+  return { text, cited: [...cited] };
+}
+
+function renderAnswer() {
+  const box = $('answer');
+  if (!synthesis) { box.hidden = true; box.innerHTML = ''; return; }
+  const d = synthesis.data;
+  const total = d.meter.yes + d.meter.possibly + d.meter.no;
+  const pct = (n) => (total ? Math.round((n / total) * 100) : 0);
+  const meter = d.consensus !== 'not-applicable' && total ? `
+    <div class="meter-row">
+      <p class="consensus"><span class="consensus-label">${esc(CONSENSUS_LABEL[d.consensus] || d.consensus)}</span> · ${total} of ${d.papers.length} papers take a position</p>
+      <div class="cmeter" role="img" aria-label="Yes ${pct(d.meter.yes)}%, possibly ${pct(d.meter.possibly)}%, no ${pct(d.meter.no)}%">
+        ${['yes', 'possibly', 'no'].map((k) => (d.meter[k] ? `<span class="cm ${k}" style="flex:${d.meter[k]}"></span>` : '')).join('')}
+      </div>
+      <p class="cmeter-legend">${['yes', 'possibly', 'no'].map((k) => `<span><i class="dot ${k}"></i>${STANCE_LABEL[k]} ${pct(d.meter[k])}%</span>`).join('')}</p>
+    </div>` : (d.consensus === 'insufficient' ? `<p class="consensus"><span class="consensus-label">${CONSENSUS_LABEL.insufficient}</span></p>` : '');
+  const answerHtml = esc(d.answer).replace(/\[([\d,\s]+)\]/g, (m, inner) => `<sup class="refs">${inner.split(',').map((n) => `<button type="button" class="ref" data-ref="${n.trim()}" title="${esc(workCache.get(d.ids[Number(n) - 1])?.title || '')}">${n.trim()}</button>`).join('')}</sup>`);
+  box.hidden = false;
+  box.innerHTML = `
+    ${meter}
+    <p class="answer-text">${answerHtml}</p>
+    <p class="answer-foot">Written by ${esc(status.model.label || 'the AI')} from the abstracts of ${d.ids.length} papers, not their full texts. Follow each citation before you rely on it.</p>
+    <div class="row-actions">
+      <button type="button" class="ghost" data-ans="copy">Copy with citations</button>
+      <button type="button" class="ghost" data-ans="save">Save as a finding</button>
+      <button type="button" class="ghost" data-ans="table">See the study table</button>
+    </div>`;
+}
+
+$('answer').addEventListener('click', async (e) => {
+  const ref = e.target.closest('[data-ref]');
+  if (ref) {
+    const id = synthesis.data.ids[Number(ref.dataset.ref) - 1];
+    setResultView('list');
+    const card = ui.results.querySelector(`.work[data-id="${CSS.escape(id)}"]`);
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.classList.add('flash');
+      setTimeout(() => card.classList.remove('flash'), 1600);
+    }
+    return;
+  }
+  const act = e.target.closest('[data-ans]')?.dataset.ans;
+  if (act === 'table') setResultView('table');
+  if (act === 'copy') copy(answerWithCitations().text, 'Answer copied with citations');
+  if (act === 'save') {
+    const themeId = await pickTheme();
+    if (!themeId) return;
+    const { cited } = answerWithCitations();
+    cited.forEach(ensureSaved);
+    // Recomputed after saving, so numeric styles number from the saved list.
+    addFinding({ kind: 'note', text: answerWithCitations().text, themeId });
+    syncSavedButtons();
+  }
+});
+
+$('answer-btn').addEventListener('click', async () => {
+  const note = $('answer-note');
+  note.hidden = true;
+  if (!status.model?.keyInEnv) {
+    note.hidden = false;
+    note.innerHTML = 'Answers need an AI key on the server. Add <code>GEMINI_API_KEY</code> to the <code>.env</code> file and restart. The study table works without one.';
+    return;
+  }
+  if (!(await ensureAccessCode())) return;
+  const works = lastSearch.results.filter((w) => w.abstract).slice(0, MAX_SYNTHESIS_PAPERS);
+  if (!works.length) { toast('None of these papers has an abstract to read.'); return; }
+  const btn = $('answer-btn');
+  btn.disabled = true;
+  $('answer').hidden = false;
+  $('answer').innerHTML = `<p class="answer-loading">Reading ${works.length} abstracts…</p>`;
+  const question = lastSearch.query;
+  try {
+    const data = await backend.synthesize(question, works.map((w) => ({
+      id: w.id, title: w.title, year: w.year, venue: w.venue, abstract: w.abstract, authors: w.authors,
+    })));
+    if (lastSearch.query !== question) return; // a new search came in meanwhile
+    synthesis = { data, question };
+    renderAnswer();
+    if (resultView === 'table') renderTable();
+  } catch (error) {
+    $('answer').innerHTML = `<p class="answer-error">${esc(error.message)}</p>`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// The rewriter asks for sources for a sentence in the draft.
+document.addEventListener('humaniser:find', (e) => {
+  ui.q.value = e.detail?.text || '';
+  ui.form.querySelector('input[value="sentence"]').checked = true;
+  runSearch();
+  window.scrollTo({ top: 0 });
+});
+
 // ---------------------------------------------------------------- start
 
 (async function start() {
@@ -1194,14 +1487,24 @@ $('style').addEventListener('change', () => {
     if (tab && $(`panel-${tab}`)) showTab(tab);
   } catch { /* fine */ }
 
-  try {
-    status = await api('/api/status');
-    const opt = $('para-engine').querySelector('option[value="model"]');
-    if (status.model?.keyInEnv) {
-      opt.disabled = false;
-      opt.textContent = `${status.model.label} (better, slower)`;
-    }
-  } catch { /* offline paraphrase still works */ }
+  if (bridge) {
+    // One file, no server: no model, and nowhere to keep a key.
+    $('answer-btn').hidden = true;
+  } else {
+    try {
+      status = await api('/api/status');
+      const opt = $('para-engine').querySelector('option[value="model"]');
+      if (status.model?.keyInEnv) {
+        opt.disabled = false;
+        opt.textContent = `${status.model.label} (better, slower)`;
+        $('para-engine').value = 'model';
+        $('para-engine').dispatchEvent(new Event('change'));
+      }
+    } catch { /* offline paraphrase still works */ }
+    $('answer-btn').title = status.model?.keyInEnv
+      ? `Reads the top ${MAX_SYNTHESIS_PAPERS} abstracts with ${status.model.label}`
+      : 'Needs an AI key on the server';
+  }
 
   // Deep links: /research?q=...
   const q = new URLSearchParams(location.search).get('q');

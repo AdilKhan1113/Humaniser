@@ -18,6 +18,9 @@ import { extractDocxText } from './lib/docx.js';
 import { rewrite, hasKey, providerStatus, listModels } from './lib/provider.js';
 import { searchWorks, getWork, connectedWorks } from './lib/scholar.js';
 import {
+  SYNTHESIS_SYSTEM, MAX_SYNTHESIS_PAPERS, buildSynthesisMessage, parseSynthesis,
+} from './lib/insights.js';
+import {
   paraphraseOffline, PARAPHRASE_SYSTEM, buildParaphraseMessage, parseModelVariants,
 } from './lib/paraphrase.js';
 import {
@@ -37,6 +40,7 @@ const SHARED = {
   '/shared/cite.js': path.join(here, 'lib', 'cite.js'),
   '/shared/overlap.js': path.join(here, 'lib', 'overlap.js'),
   '/shared/sentences.js': path.join(here, 'lib', 'sentences.js'),
+  '/shared/insights.js': path.join(here, 'lib', 'insights.js'),
 };
 
 const MIME = {
@@ -115,7 +119,13 @@ async function serveStatic(req, res, pathname) {
     res.end(data);
     return;
   }
-  const wanted = pathname === '/' ? '/index.html' : pathname === '/research' ? '/research.html' : pathname;
+  // Both tools are one page now; the old address still lands on Research.
+  if (pathname === '/research' || pathname === '/research.html') {
+    res.writeHead(302, { location: '/#research', 'cache-control': 'no-store' });
+    res.end();
+    return;
+  }
+  const wanted = pathname === '/' ? '/index.html' : pathname;
   // Resolve, then confirm the result is still inside public/, which is what
   // stops "/../../etc/passwd" from ever being read.
   const target = path.join(PUBLIC_DIR, path.normalize(wanted));
@@ -253,7 +263,53 @@ async function streamParaphrase(req, res, payload, text) {
 
 const bool = (v, fallback) => (v === undefined || v === null || v === '' ? fallback : !/^(0|false|no|off)$/i.test(String(v)));
 
+/** A light copy of a work: what the model reads, and nothing the browser could inflate. */
+function paperForModel(w) {
+  const text = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+  return {
+    id: text(w?.id, 80),
+    title: text(w?.title, 400),
+    year: Number.isInteger(w?.year) ? w.year : null,
+    venue: text(w?.venue, 200),
+    abstract: text(w?.abstract, 1800),
+    authors: Array.isArray(w?.authors) ? w.authors.slice(0, 3).map((a) => ({ family: text(a?.family || a?.name, 80) })) : [],
+  };
+}
+
 const researchRoutes = {
+  // A cited answer across the top papers, with each paper's stance and study
+  // details. One model call, answered as JSON.
+  'POST /api/research/synthesize': async (req, res) => {
+    const payload = await readJson(req);
+    const question = typeof payload.question === 'string' ? payload.question.trim() : '';
+    if (!question) throw Object.assign(new Error('Ask a question to answer.'), { status: 400 });
+    if (question.length > 1000) throw Object.assign(new Error('Keep the question to a sentence or two.'), { status: 413 });
+    const works = (Array.isArray(payload.works) ? payload.works : []).slice(0, MAX_SYNTHESIS_PAPERS).map(paperForModel)
+      .filter((w) => w.id && w.title);
+    if (!works.length) throw Object.assign(new Error('Search first: the answer is built from the papers found.'), { status: 400 });
+    admitModelCall(req, res, payload);
+
+    const controller = new AbortController();
+    res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+    let reply = '';
+    try {
+      for await (const event of rewrite({
+        text: question,
+        effort: 'low',
+        system: SYNTHESIS_SYSTEM,
+        userMessage: buildSynthesisMessage(question, works),
+      }, controller.signal)) {
+        if (event.type === 'delta') reply += event.text;
+      }
+    } catch (error) {
+      // Provider errors carry a code, not an HTTP status. A missing key is the
+      // server's configuration; anything else is the upstream API.
+      throw Object.assign(new Error(error.message), { status: error.status || (error.code === 'NO_CREDENTIALS' ? 503 : 502) });
+    }
+    sendJson(res, 200, parseSynthesis(reply, works));
+  },
+
+
   // A word, a question, a sentence from a draft, or a DOI.
   'GET /api/research/search': async (req, res, url) => {
     const p = url.searchParams;
@@ -462,7 +518,7 @@ function listen(port, attemptsLeft = 10) {
     console.log('');
     console.log('  Humaniser is running');
     console.log(`  http://${shown}:${port}`);
-    console.log(`  Research workspace: http://${shown}:${port}/research`);
+    console.log(`  Research opens first. The rewriter is at http://${shown}:${port}/#rewrite`);
     console.log('');
     const provider = providerStatus();
     console.log('  Offline rules engine: ready');

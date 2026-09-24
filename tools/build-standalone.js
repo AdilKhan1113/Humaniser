@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// Builds humaniser.html: the whole offline app in one file you can double-click,
-// with no Node, no server and no install.
+// Builds humaniser.html: the whole app in one file you can double-click, with
+// no Node, no server and no install. The rewriter runs entirely offline;
+// Research talks to OpenAlex and Crossref directly from the page, since both
+// allow it, and nothing else.
 //
 // It is generated from the same lib/ and public/ sources the server uses, never
 // hand-maintained, so the two builds cannot drift apart. Run `npm run build`
@@ -21,7 +23,10 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8');
 
 // Dependency order. Each module may only import from ones already listed.
-const MODULES = ['lexicon', 'common-words', 'verbs', 'passive', 'analyze', 'rules', 'rubric', 'docx'];
+const MODULES = [
+  'lexicon', 'common-words', 'verbs', 'passive', 'analyze', 'rules', 'rubric', 'docx',
+  'sentences', 'keywords', 'overlap', 'cite', 'scholar', 'insights', 'paraphrase',
+];
 
 const namespaceFor = (name) => `NS_${name.replace(/-/g, '_')}`;
 
@@ -104,13 +109,46 @@ window.HUMANISER_OFFLINE = {
   profiles: Object.entries(NS_rules.PROFILES).map(([id, p]) => ({
     id, label: p.label, description: p.description,
   })),
+  // public/research.js checks for this one. The page's controls arrive as
+  // strings, the way the server receives them, so they are read the same way.
+  research: {
+    search: (p) => NS_scholar.searchWorks({
+      ...p,
+      peerReviewed: !/^(0|false)$/.test(String(p.peerReviewed)),
+      openAccess: /^(1|true)$/.test(String(p.openAccess)),
+    }),
+    connected: (id, kind, opts) => NS_scholar.connectedWorks(id, kind, opts),
+    work: (id) => NS_scholar.getWork(id),
+    paraphrase: (text) => NS_paraphrase.paraphraseOffline(text),
+    polish: (text) => NS_rules.humanise(text, {
+      strength: 'light',
+      constraints: { noContractions: true, noFirstPerson: true, noSecondPerson: true, formalRegister: true },
+    }).text,
+  },
 };
 `;
+
+const SHARED_IMPORT_RE = /^import\s*\{([\s\S]*?)\}\s*from\s*'\/shared\/([^']+)\.js';?[ \t]*\n/gm;
+
+/** public/research.js imports the shared modules by URL; here they are namespaces. */
+function inlineResearch() {
+  const source = read('public', 'research.js');
+  const body = source.replace(SHARED_IMPORT_RE, (whole, names, from) => {
+    if (!MODULES.includes(from)) throw new Error(`research.js imports /shared/${from}.js, which is not built`);
+    return `const { ${names.split(',').map((x) => x.trim()).filter(Boolean).join(', ')} } = ${namespaceFor(from)};\n`;
+  });
+  if (/^import\b/m.test(body) || /^export\b/m.test(body)) {
+    throw new Error('public/research.js has an import or export the inliner does not handle');
+  }
+  return body;
+}
 
 export function buildStandalone() {
   const modules = MODULES.map(toNamespacedIife).join('\n');
   const app = read('public', 'app.js');
   const css = read('public', 'styles.css');
+  const researchCss = read('public', 'research.css');
+  const research = inlineResearch();
   let html = read('public', 'index.html');
 
   if (/^import\b/m.test(app) || /^export\b/m.test(app)) {
@@ -126,11 +164,18 @@ export function buildStandalone() {
     () => `<style>\n${css}\n</style>`,
   );
   html = html.replace(
+    '<link rel="stylesheet" href="research.css">',
+    () => `<style>\n${researchCss}\n</style>`,
+  );
+  html = html.replace('<script type="module" src="research.js"></script>\n', '');
+  html = html.replace(
     '<script type="module" src="app.js"></script>',
-    () => `<script>\n(() => {\n'use strict';\n${modules}\n${BRIDGE}\n${app}\n})();\n</script>`,
+    // Each front-end script keeps its own scope: both declare helpers such as
+    // \`ui\` and \`esc\`, and they talk through DOM events, not shared names.
+    () => `<script>\n(() => {\n'use strict';\n${modules}\n${BRIDGE}\n(() => {\n${app}\n})();\n(() => {\n${research}\n})();\n})();\n</script>`,
   );
 
-  // Nothing may reach the network: this file has to work from file:// offline.
+  // Nothing may be loaded from elsewhere: this file has to open from file://.
   const leftovers = [
     [/<link[^>]+href="(?!data:)/i, 'an external stylesheet or link'],
     [/<script[^>]+src=/i, 'an external script'],

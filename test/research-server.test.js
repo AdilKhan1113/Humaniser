@@ -28,11 +28,18 @@ test.before(async () => {
 
 test.after(() => { if (server) server.kill(); });
 
-test('serves the research page and the shared modules', async () => {
-  const page = await fetch(`${base}/research`);
-  assert.equal(page.status, 200);
-  assert.match(await page.text(), /<title>Humaniser Research<\/title>/);
-  for (const mod of ['cite', 'overlap', 'sentences']) {
+test('one page carries both tools, and the old address still works', async () => {
+  const page = await (await fetch(`${base}/`)).text();
+  assert.match(page, /id="view-research"/);
+  assert.match(page, /id="view-rewriter"/);
+  assert.match(page, /src="research\.js"/);
+  const old = await fetch(`${base}/research`, { redirect: 'manual' });
+  assert.equal(old.status, 302);
+  assert.equal(old.headers.get('location'), '/#research');
+});
+
+test('serves the shared modules', async () => {
+  for (const mod of ['cite', 'overlap', 'sentences', 'insights']) {
     const res = await fetch(`${base}/shared/${mod}.js`);
     assert.equal(res.status, 200, mod);
     assert.match(res.headers.get('content-type'), /javascript/);
@@ -79,4 +86,18 @@ test('offline paraphrase over HTTP, and the model path needs a key', async () =>
   const model = await post({ text: 'We found that sleep helps.', engine: 'model' });
   const body = await model.text();
   assert.match(body, /NO_CREDENTIALS|No model API key/);
+});
+
+test('answers need a key, and say so', async () => {
+  const res = await fetch(`${base}/api/research/synthesize`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ question: 'Does sleep help memory?', works: [{ id: 'W1', title: 'T', abstract: 'A' }] }),
+  });
+  assert.equal(res.status, 503);
+  assert.match((await res.json()).error, /API key/);
+  const empty = await fetch(`${base}/api/research/synthesize`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: 'x', works: [] }),
+  });
+  assert.equal(empty.status, 400);
 });

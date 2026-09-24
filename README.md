@@ -1,6 +1,8 @@
 # Humaniser
 
-Paste writing that sounds like a committee produced it. Get back something a person would say.
+A research assistant and a rewriter in one page. Ask a question and get peer-reviewed papers, a cited answer with a consensus meter, and a table of study designs, samples and findings. Save what matters, paraphrase it with the overlap shown, cite it in six styles, then write it up and smooth the prose, all without leaving the page.
+
+The rewriter half does what it always did: paste writing that sounds like a committee produced it, and get back something a person would say.
 
 Humaniser runs as a small local web app on macOS or Linux. It scores your text against a house style, shows you exactly where the prose stiffens, and rewrites it two ways: with an offline rules engine that needs no account and no network, or with Claude when you want real judgement applied to rhythm and metaphor.
 
@@ -14,9 +16,9 @@ Dark mode comes along for free, following whatever your Mac is set to: [see it](
 
 Download **[humaniser.html](humaniser.html)** and double-click it.
 
-That is the whole thing. No Node, no terminal, no server, no account, no network. The rules engine, the scoring, the charts and the findings are all inside that one file, running in your browser. Your text never leaves the page, which you can verify by opening it with the wifi off.
+That is the whole thing. No Node, no terminal, no server, no account. The rewriter's rules engine, the scoring, the charts and the findings are all inside that one file, running in your browser, and your draft never leaves the page. Research is in there too: it searches OpenAlex straight from the page, so it needs an internet connection, and the only things it sends are your search terms.
 
-It gives you everything except the Claude engine, which needs a server to hold the API key. If you have no key, you lose nothing at all. Marking guides work in it too, `.docx` included: the zip is unpacked in the page.
+It gives you everything except the AI features (the cited answer, AI paraphrasing and the model rewrite), which need a server to hold the API key. If you have no key, you lose nothing at all. Marking guides work in it too, `.docx` included: the zip is unpacked in the page.
 
 On a Mac you may see a warning the first time, since the file came from the internet. Right-click it and choose **Open With → your browser** and it will open normally.
 
@@ -202,13 +204,17 @@ It is not a detector. A high score means the writing reads naturally. It is not 
 
 ## The research workspace
 
-Open **Research** in the top bar, or go to `/research`. It is the other half of writing from sources: finding the papers, keeping track of what they say, putting it in your own words, and citing it properly.
+Research is the first thing you see; **Rewriter** is the other tab in the top bar. It covers the whole path of writing from sources: finding the papers, reading across them, keeping track of what they say, putting it in your own words, citing it properly, and writing it up.
 
 ![search results with evidence highlighted, and a findings board with citations attached](docs/screenshot-research.png)
 
 **Search with whatever you have.** A topic (`microplastics freshwater`), a question (`Does sleep deprivation affect working memory in adolescents?`), a claim lifted from your draft, or a DOI. Questions and sentences are mostly glue words, which full-text search ranks badly, so the app pulls out the content words and shows you what it actually searched for. For a question or a claim, each result also shows the abstract sentences that match, so you can see the supporting line without opening the paper.
 
 The index is [OpenAlex](https://openalex.org): more than 250 million scholarly works, free, with citation counts, venues and open-access links. By default you only see **peer-reviewed journal articles and reviews with a DOI**, retracted papers excluded. Turn that off to include books, conference papers and preprints, which are labelled as such. Filter by year, by citation count, or to papers that are free to read, and sort by best match, most cited or newest.
+
+**Get an answer across the papers.** Press **Answer from these papers** and the AI reads the top twelve abstracts and writes a short answer in which every claim links to the paper behind it. For a yes-or-no question, a consensus meter shows how many papers say yes, possibly or no. It works only from the abstracts it was given, and it says so, and a citation to a paper it was not given is stripped rather than shown. Copy the answer with real in-text citations in your chosen style, or save it as a finding.
+
+**See the studies side by side.** Switch to **Study table** for one row per paper: design, sample, population and key finding. Sort by strength of evidence (meta-analyses and trials first), sample size, citations or date, and export it as CSV. Without an AI key, the table is filled by pattern matching on the abstract, which catches the common designs and sample sizes and says "not stated" rather than guess. After an answer, the AI's reading fills the gaps, marked ✦, and a column shows each paper's stance.
 
 **Follow the trail.** Every paper has three buttons. **Related** shows OpenAlex's similar works. **Cited by** shows newer papers that built on it. **References** shows what it built on.
 
@@ -226,11 +232,23 @@ Every version, including your edits as you type, is checked against the source:
 
 This is not a plagiarism checker and it does not claim to be one. It tells you whether the wording is still the author's, which is the thing you need to know before the sentence goes into your draft. A paraphrase still needs a citation, and the app always attaches one.
 
+**Polish, write up, and go back for more.** Any paraphrase can be **polished** by the rewriter's engine under academic rules: no contractions, no "we", no "you". **Write up** on a theme sends its findings, citations attached, to the rewriter as a paragraph, with a marking guide for formal academic writing already filled in. Going the other way, **Find sources** in the rewriter takes the sentence under your cursor and searches for papers that support it.
+
 **Cite in six styles:** APA 7th, MLA 9th, Chicago author-date, Harvard, IEEE and Vancouver. For any paper you get the reference-list entry, the in-text citation for the end of a sentence (`(Okafor et al., 2019, p. 114)`), and the narrative form for when the authors are named in the sentence (`Okafor et al. (2019)`). Add a page or a range and it is formatted the way the style wants. Two papers by the same authors in the same year become 2019a and 2019b. Numeric styles number sources in the order you saved them. The **References** tab builds the whole list and updates when you change style. Copy it, or download it as BibTeX or RIS for Zotero, Mendeley, EndNote or Overleaf.
 
 Your projects stay in the browser. What leaves it is your search terms, and the passage you paraphrase if you pick the model engine. **Back up** from the project menu writes a `.json` file, and **Restore** reads it back on any machine.
 
 Citation data is only as good as the index. Titles sometimes arrive in capitals and issue numbers go missing, so check the final list against your style guide. To get faster, more reliable answers from OpenAlex, set `SCHOLAR_EMAIL` in `.env`. The address is sent with each request to OpenAlex and Crossref, the way both ask.
+
+### Turning on the AI features with Gemini
+
+The cited answer, AI paraphrasing and the model rewrite all use whichever key the server has. For Gemini, get a key from [Google AI Studio](https://aistudio.google.com/apikey), then in the project folder:
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` in any text editor, put the key after `GEMINI_API_KEY=`, save, and restart with `npm start`. The status line under the rewriter's top bar says "Gemini is ready" when it has worked. Keep the key in `.env` only: that file is ignored by git, so it never ends up on GitHub.
 
 ## Project layout
 
@@ -260,12 +278,13 @@ lib/
   cite.js            Six citation styles, BibTeX and RIS. Also runs in the browser
   paraphrase.js      The offline paraphraser, and the model prompt for one
   overlap.js         How close a paraphrase is to its source. Also runs in the browser
+  insights.js        The study table, and the prompt and parser for the cited answer
   sentences.js       Sentence splitting that survives "et al." and "0.62"
   env.js             Reads .env without needing a newer Node
-public/              The front end: index.* is the rewriter, research.* the workspace
+public/              The front end: one page, app.js for the rewriter, research.js for Research
 tools/
   build-standalone.js Inlines lib/ and public/ into humaniser.html
-test/                136 tests, run with npm test
+test/                144 tests, run with npm test
 ```
 
 `public/app.js` serves both builds. With a server it calls `/api`; in the single-file build it finds an injected bridge and calls the rules engine directly, so there is one front end rather than two copies drifting apart. A test fails if `humaniser.html` falls behind its sources.
@@ -335,7 +354,7 @@ The image sets `HOST=0.0.0.0` and `TRUST_PROXY=1`, runs as a non-root user, and 
 
 ### What is exposed
 
-Public: the pages, the offline engine, the scholarly search, the offline paraphraser, `/healthz`, and `/api/status`, which reports only whether a key and a code exist. Behind the access code: model rewriting and model paraphrasing, the routes that cost money. Never sent to the browser under any circumstances: the API key and the access code, which a test asserts on every route.
+Public: the pages, the offline engine, the scholarly search, the offline paraphraser, `/healthz`, and `/api/status`, which reports only whether a key and a code exist. Behind the access code: model rewriting, model paraphrasing and the cited answer, the routes that cost money. Never sent to the browser under any circumstances: the API key and the access code, which a test asserts on every route.
 
 ## Development
 

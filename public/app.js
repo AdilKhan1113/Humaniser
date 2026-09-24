@@ -196,8 +196,6 @@ async function loadStatus() {
     // not a choice. Drop the control rather than show a dead option.
     ui.mode.closest('.field').hidden = true;
     ui.effortField.hidden = true;
-    // Research searches go through the server too, so there is nowhere to go.
-    document.querySelector('.appnav')?.remove();
     ui.engineNote.textContent = 'Single-file build. Everything runs inside this page: '
       + 'no install, no server, no network, and your text never leaves the browser.';
     return;
@@ -839,6 +837,70 @@ ui.guide.addEventListener('drop', (e) => {
   if (!file) return;
   if (ui.guideBody.hidden) ui.guideToggle.click();
   loadGuide({ file });
+});
+
+// ---------- one page, two tools ----------
+// Research is the front door; the rewriter lives at #rewrite. The two halves
+// talk through DOM events rather than importing each other, which is what
+// lets the single-file build scope each script separately.
+
+function currentView() {
+  return location.hash === '#rewrite' ? 'rewriter' : 'research';
+}
+
+function showView() {
+  const view = currentView();
+  document.getElementById('view-research').hidden = view !== 'research';
+  document.getElementById('view-rewriter').hidden = view !== 'rewriter';
+  document.querySelectorAll('.navlink[data-view]').forEach((link) => {
+    const on = link.dataset.view === view;
+    link.classList.toggle('current', on);
+    if (on) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
+  });
+  document.title = view === 'rewriter' ? 'Humaniser' : 'Humaniser Research';
+}
+window.addEventListener('hashchange', showView);
+showView();
+
+/** The sentence around the cursor, or whatever is selected. */
+function sentenceAtCursor() {
+  const { value, selectionStart: a, selectionEnd: b } = ui.input;
+  if (b > a) return value.slice(a, b).trim();
+  const before = value.slice(0, a);
+  const start = Math.max(before.lastIndexOf('. '), before.lastIndexOf('? '), before.lastIndexOf('! '), before.lastIndexOf('\n'));
+  const rest = value.slice(a).search(/[.?!](\s|$)|\n/);
+  return value.slice(start < 0 ? 0 : start + 1, rest < 0 ? value.length : a + rest + 1).trim();
+}
+
+document.getElementById('find-sources').addEventListener('click', () => {
+  const text = sentenceAtCursor();
+  if (!text) {
+    setStatus('Put your cursor in a sentence, or select one, and it will find papers that support it.');
+    return;
+  }
+  location.hash = '#research';
+  document.dispatchEvent(new CustomEvent('humaniser:find', { detail: { text } }));
+});
+
+// Research hands over findings to be written up. Academic text needs the
+// academic rules, so an empty marking guide is filled with them.
+document.addEventListener('humaniser:rewrite', (event) => {
+  const { text = '', academic = false, citationStyle = '' } = event.detail || {};
+  ui.input.value = text;
+  ui.input.dispatchEvent(new Event('input'));
+  location.hash = '#rewrite';
+  if (academic && !state.rubricText) {
+    ui.guideText.value = [
+      'Formal academic register.',
+      'Avoid contractions.',
+      'Write in the third person.',
+      citationStyle ? `Citations follow ${citationStyle}.` : '',
+    ].filter(Boolean).join('\n');
+    if (ui.guideBody.hidden) ui.guideToggle.click();
+    loadGuide({ text: ui.guideText.value });
+  }
+  setStatus('Loaded from Research. Citations are kept as they are.');
+  window.scrollTo({ top: 0 });
 });
 
 loadStatus();

@@ -10,6 +10,7 @@ import {
   rebuildAbstract, normaliseOpenAlex, normaliseCrossref, splitName, buildFilter, bareDoi,
   searchWorks, getWork, connectedWorks, setFetch,
 } from '../lib/scholar.js';
+import { extractStudy, keyFinding, parseSynthesis, buildSynthesisMessage, studiesCsv } from '../lib/insights.js';
 import { WORKS } from './fixtures/openalex.js';
 
 // ---------------------------------------------------------------- query
@@ -253,4 +254,65 @@ test('an index outage becomes a readable error', async (t) => {
   await assert.rejects(searchWorks({ q: 'anything' }), (e) => e.status === 502 && /answered 503/.test(e.message));
   setFetch(async () => { throw new TypeError('fetch failed'); });
   await assert.rejects(searchWorks({ q: 'anything' }), /Could not reach/);
+});
+
+// ---------------------------------------------------------------- insights
+
+test('the study table reads design, sample and finding from abstracts', () => {
+  const [a, b, c] = WORKS.map(normaliseOpenAlex).map(extractStudy);
+  assert.equal(a.design, 'Randomised controlled trial');
+  assert.equal(a.sample, '84 students');
+  assert.equal(a.population, 'students aged 14 to 17');
+  assert.match(a.finding, /^These results suggest/);
+  assert.equal(b.design, 'Cohort study');
+  assert.equal(b.sample, '2,310 participants');
+  assert.equal(c.design, 'Meta-analysis');
+  assert.equal(c.sample, '61 studies');
+  assert.ok(c.designRank < a.designRank && a.designRank < b.designRank, 'evidence ranks in the usual order');
+});
+
+test('nothing is guessed when the abstract is silent', () => {
+  const x = extractStudy({ title: 'Thoughts on a topic', abstract: 'We discuss the topic in 2019 terms.' });
+  assert.equal(x.design, null);
+  assert.equal(x.sample, null);
+  assert.equal(keyFinding(''), null);
+});
+
+test('model answers are parsed, and invented citations are dropped', () => {
+  const works = WORKS.map(normaliseOpenAlex);
+  const reply = 'Here you go:\n```json\n' + JSON.stringify({
+    answer: 'Short sleep impairs working memory [1, 2], and one paper says so [7].',
+    consensus: 'mostly-yes',
+    papers: [
+      { n: 1, stance: 'yes', finding: 'One short night cut accuracy.', design: 'RCT', population: 'null', sample: '84' },
+      { n: 2, stance: 'possibly', finding: 'Small effects over time.' },
+      { n: 9, stance: 'no' },
+      { n: 1, stance: 'no' },
+    ],
+  }) + '\n```';
+  const out = parseSynthesis(reply, works);
+  assert.equal(out.answer, 'Short sleep impairs working memory [1, 2], and one paper says so.');
+  assert.equal(out.papers.length, 2);
+  assert.equal(out.papers[0].id, 'W1001');
+  assert.equal(out.papers[0].population, null);
+  assert.deepEqual(out.meter, { yes: 1, possibly: 1, no: 0, unclear: 0 });
+  assert.throws(() => parseSynthesis('I cannot help with that.', works), /expected form/);
+});
+
+test('the synthesis prompt numbers the papers it gives', () => {
+  const msg = buildSynthesisMessage('Does it work?', WORKS.map(normaliseOpenAlex));
+  assert.match(msg, /^Question: Does it work\?/);
+  assert.match(msg, /\[1\] Okafor, de la Cruz, Lin \(2019\)/);
+  assert.match(msg, /\[3\] van den Berg \(2020\)/);
+});
+
+test('the study table exports as CSV', () => {
+  const work = normaliseOpenAlex(WORKS[0]);
+  const csv = studiesCsv([{ work, ...extractStudy(work), stance: 'yes' }]);
+  const [head, row] = csv.split('\n');
+  assert.match(head, /^Title,Authors,Year/);
+  assert.match(row, /^Sleep deprivation and working memory in adolescents: a randomized crossover trial,Hannah R\. Okafor; /);
+  assert.match(row, /,"These results suggest that even a single short night impairs working memory in this age group, e\.g\. during examination periods\.",yes$/);
+  const evil = studiesCsv([{ work: { ...work, title: '=HYPERLINK("x")' } }]).split('\n')[1];
+  assert.match(evil, /^"'=HYPERLINK\(""x""\)",/);
 });
