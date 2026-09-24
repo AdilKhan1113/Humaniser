@@ -312,3 +312,14 @@ test('Google\'s requested delay is honoured and a bad key is not retried', async
     assert.equal(calls.length, 1);
   });
 });
+
+test('bold asks for real rewriting with required short and long sentences, and hedges are protected', () => {
+  const bold = buildUserMessage({ text: 'x', strength: 'bold' });
+  assert.match(bold, /most sentences should read differently/);
+  assert.match(bold, /at least one sentence under 8 words/);
+  assert.match(bold, /Never three sentences of similar length in a row/);
+  assert.match(bold, /hedges, headings, list numbering/);
+  assert.match(buildUserMessage({ text: 'x', strength: 'balanced' }), /at least one sentence under 10 words/);
+  assert.match(HOUSE_STYLE, /level of certainty/);
+  assert.match(HOUSE_STYLE, /"probably"/);
+});

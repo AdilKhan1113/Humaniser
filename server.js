@@ -12,7 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { analyze } from './lib/analyze.js';
-import { humanise, PROFILES } from './lib/rules.js';
+import { humanise, PROFILES, polishModelOutput } from './lib/rules.js';
 import { parseRubric, checkAgainstRubric } from './lib/rubric.js';
 import { extractDocxText } from './lib/docx.js';
 import { rewrite, hasKey, providerStatus, listModels } from './lib/provider.js';
@@ -209,9 +209,14 @@ async function streamRewrite(req, res, payload) {
     for await (const event of rewrite(options, controller.signal)) {
       if (event.type === 'delta') rewritten += event.text;
       if (event.type === 'done') {
-        const finished = rewritten.trim();
+        // The model does the rewriting; the offline rules then guarantee the
+        // mechanical ones it can miss (banned words, formulas, dash strings).
+        const polished = polishModelOutput(rewritten.trim(), { constraints });
+        const finished = polished.text.trim();
         send({
           ...event,
+          text: finished,
+          polishChanges: polished.changes,
           report: analyze(finished, { constraints }),
           rubricChecks: rubric ? checkAgainstRubric(finished, rubric) : null,
         });

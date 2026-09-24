@@ -243,3 +243,21 @@ test('em dashes are thinned: a pair becomes commas, one per paragraph survives',
   assert.equal(run('Pages 10—12 matter.', 'balanced'), 'Pages 10—12 matter.');
   assert.equal(run('The plan — bold as it was — failed.', 'light'), 'The plan — bold as it was — failed.', 'light touch leaves dashes alone');
 });
+
+test('the clean-up after a model rewrite fixes only the mechanical rules', async () => {
+  const { polishModelOutput } = await import('../lib/rules.js');
+  const text = '1. Learn Figma\nThis is probably the most practical part — and it matters — for you. It is not only useful but also fun. Moreover, delve into `display: flex` at https://example.org.';
+  const { text: out, changes } = polishModelOutput(text);
+  assert.match(out, /^1\. Learn Figma\n/, 'list numbering and line breaks survive');
+  assert.match(out, /probably/, 'hedges are the model\'s business, and stay');
+  assert.match(out, /, and it matters,/);
+  assert.match(out, /useful and fun/);
+  assert.doesNotMatch(out, /Moreover|delve/i);
+  assert.match(out, /`display: flex`/);
+  assert.match(out, /https:\/\/example\.org/);
+  assert.ok(changes.length >= 4);
+  // Sentences are not split or merged here, and nothing is contracted.
+  assert.equal(polishModelOutput('It is a long sentence that runs on and on well past the usual limit because the model chose to let it flow that way.').text,
+    'It is a long sentence that runs on and on well past the usual limit because the model chose to let it flow that way.');
+  assert.match(polishModelOutput("Don't stop.", { constraints: { noContractions: true } }).text, /^Do not stop\./);
+});

@@ -644,12 +644,16 @@ async function runModel(text) {
         ui.output.textContent = rewritten;
         ui.outCount.textContent = `${wordCount(rewritten).toLocaleString()} words`;
       } else if (event.type === 'done') {
+        // The server's final text includes the offline clean-up pass.
+        if (typeof event.text === 'string' && event.text.trim()) rewritten = event.text;
         showOutput(rewritten.trim());
         state.rubricChecks = event.rubricChecks || [];
         renderDashboard(event.report, state.baseline);
         const bits = [`${event.usage.output.toLocaleString()} tokens out`];
         if (event.usage.cacheRead) bits.push(`${event.usage.cacheRead.toLocaleString()} cached`);
         if (event.fallbackUsed) bits.push('served by a fallback model');
+        const fixes = (event.polishChanges || []).length;
+        if (fixes) bits.push(`${fixes} more fix${fixes === 1 ? '' : 'es'} by the offline rules`);
         if (event.truncated) bits.push('output hit the token ceiling, so it may be cut short');
         setStatus(`Done with ${event.model}. ${bits.join(' · ')}.`);
       } else if (event.type === 'error') {
